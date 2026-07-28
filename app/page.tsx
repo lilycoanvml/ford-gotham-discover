@@ -53,13 +53,16 @@ function speakFallback(text: string) {
   if (typeof window === 'undefined' || !('speechSynthesis' in window)) return;
   window.speechSynthesis.cancel();
   const utterance = new SpeechSynthesisUtterance(text);
-  utterance.rate = 1.0; utterance.pitch = 1.06; utterance.volume = 1;
+  // Upbeat, energetic male delivery to match the Cloud TTS "Puck" voice.
+  utterance.rate = 1.05; utterance.pitch = 0.92; utterance.volume = 1;
   const voices = voiceCache.length > 0 ? voiceCache : window.speechSynthesis.getVoices();
   const preferred =
-    voices.find(v => v.name === 'Google US English')        ||
-    voices.find(v => v.name === 'Samantha')                 ||
-    voices.find(v => v.name.includes('Aria'))               ||
-    voices.find(v => v.lang.startsWith('en') && !v.name.toLowerCase().includes('male'));
+    voices.find(v => v.name === 'Google UK English Male')   ||
+    voices.find(v => v.name === 'Daniel')                   ||
+    voices.find(v => v.name === 'Alex')                     ||
+    voices.find(v => v.name === 'Fred')                     ||
+    voices.find(v => v.lang.startsWith('en') && v.name.toLowerCase().includes('male')) ||
+    voices.find(v => v.lang.startsWith('en'));
   if (preferred) utterance.voice = preferred;
   window.speechSynthesis.speak(utterance);
 }

@@ -29,14 +29,13 @@ export async function POST(req: NextRequest) {
       input: { text: spoken },
       voice: {
         languageCode: 'en-US',
-        // Chirp 3 HD voices render ~3x faster than Journey while still
-        // sounding natural. Aoede = warm, friendly female. Other good
-        // options: 'Kore' (energetic), 'Leda' (calm).
-        name: 'en-US-Chirp3-HD-Aoede',
+        // Chirp 3 HD voices render fast and sound natural. Puck = upbeat male.
+        // Other male options: 'Charon' (deeper), 'Fenrir'; 'Aoede'/'Kore' are female.
+        name: 'en-US-Chirp3-HD-Puck',
       },
       audioConfig: {
         audioEncoding: 'OGG_OPUS',
-        speakingRate: 1.05,
+        speakingRate: 1.08, // a touch brisk for an upbeat, energetic delivery
         // Chirp 3 HD doesn't support pitch — relies on voice character itself
       },
     });

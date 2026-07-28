@@ -75,7 +75,7 @@ Open [http://localhost:3000](http://localhost:3000)
 | Variable | Required | Description |
 |----------|----------|-------------|
 | `GEMINI_API_KEY` | Yes | Google Gemini API key |
-| `GEMINI_MODEL` | No | Override model (default: `gemini-2.5-flash`) |
+| `GEMINI_MODEL` | No | Override model (default: `gemini-3.6-flash`) |
 | `GOOGLE_APPLICATION_CREDENTIALS` | No | GCP creds for Cloud TTS (falls back to Web Speech) |
 | `NEXT_PUBLIC_APP_ENV` | No | `development` or `production` |
 

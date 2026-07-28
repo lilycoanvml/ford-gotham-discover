@@ -1,0 +1,42 @@
+steps:
+  # Build the Docker image
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - build
+      - -t
+      - '$_IMAGE_URL'
+      - .
+
+  # Push to Artifact Registry
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - push
+      - '$_IMAGE_URL'
+
+  # Deploy to Cloud Run
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: gcloud
+    args:
+      - run
+      - deploy
+      - '$_SERVICE_NAME'
+      - --image=$_IMAGE_URL
+      - --region=$_REGION
+      - --platform=managed
+      - --allow-unauthenticated
+      - --port=8080
+      - --memory=512Mi
+      - --cpu=1
+      - --set-secrets=GEMINI_API_KEY=gemini-api-key:latest
+      - --set-env-vars=GEMINI_MODEL=gemini-2.5-flash
+
+substitutions:
+  _SERVICE_NAME: ford-gotham-discover
+  _REGION: us-central1
+  _IMAGE_URL: us-central1-docker.pkg.dev/$PROJECT_ID/ford-gotham-discover/app:$SHORT_SHA
+
+images:
+  - '$_IMAGE_URL'
+
+options:
+  logging: CLOUD_LOGGING_ONLY

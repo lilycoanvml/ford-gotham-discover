@@ -1,0 +1,16 @@
+.git
+.gitignore
+.env
+.env.local
+.env.production
+.env*.local
+.claude
+node_modules
+.next
+*.tsbuildinfo
+next-env.d.ts
+README.md
+docs/
+tests/
+Dockerfile
+.dockerignore

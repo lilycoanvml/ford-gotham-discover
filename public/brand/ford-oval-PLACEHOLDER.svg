@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 48" role="img" aria-label="Ford oval placeholder">
+  <!-- ─────────────────────────────────────────────────────────────────────────
+       PLACEHOLDER ASSET — NOT the real Ford Oval. This is a clearly-labeled
+       stand-in so the layout reads correctly. Replace with the licensed Ford
+       Oval SVG per the official Ford RSF / Brand Design System before any
+       external use. Do not ship this file.
+       ───────────────────────────────────────────────────────────────────────── -->
+  <ellipse cx="60" cy="24" rx="56" ry="20" fill="#00095B" stroke="#066FEF" stroke-width="1.6"/>
+  <text x="60" y="29" text-anchor="middle" font-family="Archivo, Arial, sans-serif"
+        font-size="15" font-style="italic" font-weight="700" letter-spacing="1" fill="#ffffff">Ford</text>
+  <text x="60" y="44" text-anchor="middle" font-family="monospace" font-size="4.4"
+        letter-spacing="1.5" fill="#066FEF" opacity="0.8">PLACEHOLDER — REPLACE PER RSF</text>
+</svg>

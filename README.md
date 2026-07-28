@@ -117,3 +117,4 @@ not attached to any previous repository or deployment.
 
 The Gemini key is read from Secret Manager (`gemini-api-key`) in the target project.
 # ford-gotham-discover
+# ford-gotham-discover

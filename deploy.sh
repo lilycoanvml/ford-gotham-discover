@@ -58,7 +58,7 @@ gcloud run deploy "$SERVICE_NAME" \
   --min-instances=0 \
   --max-instances=10 \
   --set-secrets="GEMINI_API_KEY=gemini-api-key:latest" \
-  --set-env-vars="GEMINI_MODEL=gemini-3.6-flash" \
+  --set-env-vars="GEMINI_MODEL=gemini-3.6-flash,GEMINI_TTS_MODEL=gemini-3.1-flash-live-preview,GEMINI_TTS_VOICE=Puck" \
   --project="$PROJECT_ID"
 
 echo ""

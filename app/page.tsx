@@ -28,11 +28,31 @@ function safeConfig(id: string | undefined): ConfigId | null {
 let voiceCache: SpeechSynthesisVoice[] = [];
 let currentAudio: HTMLAudioElement | null = null;
 
+// Web Audio is used for the streaming Gemini path: the coach's line arrives as
+// raw PCM chunks and each is scheduled back-to-back so playback starts ~750ms
+// in rather than waiting out the whole ~10s generation.
+let audioCtx: AudioContext | null = null;
+let liveSources: AudioBufferSourceNode[] = [];
+let speechToken = 0; // bumped on every new utterance so stale streams self-cancel
+
 function primeVoices() {
   if (typeof window === 'undefined' || !('speechSynthesis' in window)) return;
   const load = () => { voiceCache = window.speechSynthesis.getVoices(); };
   load();
   window.speechSynthesis.addEventListener('voiceschanged', load);
+}
+
+// Create/resume the AudioContext from inside a real tap — iOS Safari will not
+// start one otherwise, and every later coach line depends on it.
+function primeAudio() {
+  if (typeof window === 'undefined') return;
+  try {
+    const Ctor = window.AudioContext
+      || (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+    if (!Ctor) return;
+    audioCtx = audioCtx ?? new Ctor();
+    if (audioCtx.state === 'suspended') void audioCtx.resume();
+  } catch { /* fall back to the <audio> path */ }
 }
 
 // Warm up the TTS endpoint so the first real call isn't slowed by cold start.
@@ -42,10 +62,76 @@ async function prewarmTTS() {
     fetch('/api/tts', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text: 'hi' }),
+      body: JSON.stringify({ warm: true }),
       keepalive: true,
     });
   } catch { /* silent — best-effort */ }
+}
+
+// Stop every playback path at once: streamed PCM, <audio> element, Web Speech.
+function stopSpeech() {
+  if (typeof window === 'undefined') return;
+  speechToken++;
+  for (const src of liveSources) { try { src.onended = null; src.stop(); } catch { /* already ended */ } }
+  liveSources = [];
+  if (currentAudio) { currentAudio.pause(); currentAudio = null; }
+  window.speechSynthesis?.cancel();
+}
+
+// Play a streamed 16-bit little-endian PCM body, scheduling chunks as they land.
+async function playPcmStream(res: Response, token: number, onEnd?: () => void) {
+  primeAudio();
+  const ctx = audioCtx;
+  if (!ctx || !res.body) throw new Error('Web Audio unavailable');
+  if (ctx.state === 'suspended') await ctx.resume();
+
+  const rate = Number(res.headers.get('X-Audio-Rate')) || 24000;
+  const reader = res.body.getReader();
+  let playhead = 0;
+  let tail: AudioBufferSourceNode | null = null;
+  let carry = new Uint8Array(0); // odd trailing byte of a chunk waits for the next
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    if (token !== speechToken) { await reader.cancel(); return; } // interrupted
+
+    // Stitch the carried byte onto this chunk, then keep a whole number of samples
+    const buf = carry.length ? new Uint8Array([...carry, ...value]) : value;
+    const usable = buf.length - (buf.length % 2);
+    carry = usable === buf.length ? new Uint8Array(0) : buf.subarray(usable);
+    if (!usable) continue;
+
+    const view = new DataView(buf.buffer, buf.byteOffset, usable);
+    const samples = new Float32Array(usable / 2);
+    for (let i = 0; i < samples.length; i++) samples[i] = view.getInt16(i * 2, true) / 32768;
+
+    const audioBuffer = ctx.createBuffer(1, samples.length, rate);
+    audioBuffer.copyToChannel(samples, 0);
+    const src = ctx.createBufferSource();
+    src.buffer = audioBuffer;
+    src.connect(ctx.destination);
+
+    // 120ms of lead-in absorbs network jitter without a noticeable delay
+    playhead = Math.max(playhead, ctx.currentTime + 0.12);
+    src.start(playhead);
+    playhead += audioBuffer.duration;
+
+    liveSources.push(src);
+    src.onended = () => { liveSources = liveSources.filter(s => s !== src); };
+    tail = src;
+  }
+
+  if (token !== speechToken) return;
+  if (!tail) throw new Error('no audio in stream');
+
+  // The last scheduled chunk finishing is the end of the utterance
+  await new Promise<void>(resolve => {
+    tail!.onended = () => { liveSources = liveSources.filter(s => s !== tail); resolve(); };
+  });
+  if (token !== speechToken) return;
+  _onSpeakEnd?.();
+  if (onEnd) setTimeout(onEnd, 700);
 }
 
 // Web Speech API fallback (used when GCP TTS route is unavailable locally)
@@ -80,11 +166,13 @@ function sanitizeClosingMsg(msg: string): string {
   return msg.replace(/\[.*?\]/g, '').trim() || "Take a look at who you're becoming.";
 }
 
-// Primary: Google Cloud TTS. Falls back to Web Speech API if the route is down.
+// Primary: /api/tts. That route streams raw PCM from Gemini native audio, or
+// returns a whole Cloud TTS clip as JSON if the live path is unavailable — both
+// shapes are handled here. Last resort is the browser's own Web Speech API.
 async function speak(text: string, onEnd?: () => void) {
   if (typeof window === 'undefined') return;
-  if (currentAudio) { currentAudio.pause(); currentAudio = null; }
-  window.speechSynthesis?.cancel();
+  stopSpeech();
+  const token = speechToken;
   _onSpeakStart?.();
   try {
     const res = await fetch('/api/tts', {
@@ -93,11 +181,22 @@ async function speak(text: string, onEnd?: () => void) {
       body: JSON.stringify({ text }),
     });
     if (!res.ok) throw new Error('TTS unavailable');
-    const { audio } = await res.json();
-    currentAudio = new Audio(`data:audio/ogg;base64,${audio}`);
+    if (token !== speechToken) return; // a newer utterance already took over
+
+    // Streaming Gemini path — play chunks as they arrive
+    if (res.headers.get('Content-Type')?.startsWith('audio/')) {
+      await playPcmStream(res, token, onEnd);
+      return;
+    }
+
+    // Cloud TTS path — one complete clip
+    const { audio, mime } = await res.json();
+    if (token !== speechToken) return;
+    currentAudio = new Audio(`data:${mime || 'audio/ogg'};base64,${audio}`);
     currentAudio.addEventListener('ended', () => { _onSpeakEnd?.(); if (onEnd) setTimeout(onEnd, 700); }, { once: true });
     await currentAudio.play();
   } catch {
+    if (token !== speechToken) return;
     _onSpeakEnd?.();
     speakFallback(text);
     if (onEnd) setTimeout(onEnd, Math.max(2800, text.split(' ').length * 380));
@@ -109,13 +208,6 @@ function ChevronLeft({ size = 16 }: { size?: number }) {
   return (
     <svg width={size} height={size} viewBox="0 0 18 18" fill="none">
       <path d="M11 4l-5 5 5 5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
-}
-function ChevronRight({ size = 16 }: { size?: number }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 18 18" fill="none">
-      <path d="M7 4l5 5-5 5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   );
 }
@@ -317,6 +409,9 @@ function ChatScreen({ onComplete, onBack }: {
     if (started.current) return;
     started.current = true;
     prewarmTTS();
+    // Warm the reveal plate while the user is still talking — it's a heavy loop.
+    const preload = new Image();
+    preload.src = REVEAL_ART;
     startConversation();
     const SRA = (window as typeof window & { SpeechRecognition?: unknown; webkitSpeechRecognition?: unknown }).SpeechRecognition
              || (window as typeof window & { webkitSpeechRecognition?: unknown }).webkitSpeechRecognition;
@@ -353,7 +448,7 @@ function ChatScreen({ onComplete, onBack }: {
     const SRA = (window as typeof window & { SpeechRecognition?: unknown; webkitSpeechRecognition?: unknown }).SpeechRecognition
              || (window as typeof window & { webkitSpeechRecognition?: unknown }).webkitSpeechRecognition;
     if (!SRA) return;
-    window.speechSynthesis?.cancel();
+    stopSpeech();
     setUserPaused(false);
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -579,58 +674,56 @@ function ChatScreen({ onComplete, onBack }: {
 }
 
 // ─── REVEAL SCREEN ───────────────────────────────────────────────────────────
+// Design source: Figma "Ford Gotham Discovery" → Frame 1 (node 24:264).
+// Black canvas; tracked-caps config title overlapping the sunrise plate; bold
+// identity headline; narrative; steel CONTINUE pill; ghost START OVER.
+// The plate is the animated sunrise exported from the Figma frame — 105 frames
+// at 30ms, set to play once and hold on the lit frame (see README).
+const REVEAL_ART = '/reveal/truck-sunrise.gif';
+
 function RevealScreen({ reveal, onNext, onRestart }: {
   reveal: GothamRevealPayload; onNext: () => void; onRestart: () => void;
 }) {
   const fs = reveal.future_self;
-  const primary = safeHex(fs.primaryColor, DEFAULT_PRIMARY);
-  const accent  = safeHex(fs.accentColor, DEFAULT_ACCENT);
-  const config  = safeConfig(fs.config_id);
-  const [illuminate, setIlluminate] = useState(false);
+  const config = safeConfig(fs.config_id);
   const spoken = useRef(false);
 
+  // The card's staged fade-in is pure CSS (see .reveal-* animations); this only
+  // starts the spoken closing line, timed to land with it. The guard sits inside
+  // the timer, not around it — StrictMode's mount/cleanup/mount would otherwise
+  // clear the first timer and short-circuit the second, so nothing ever spoke.
   useEffect(() => {
-    if (spoken.current) return;
-    spoken.current = true;
     const t = setTimeout(() => {
-      setIlluminate(true);
+      if (spoken.current) return;
+      spoken.current = true;
       speak(sanitizeClosingMsg(reveal.closingMessage));
     }, 700);
-    return () => { clearTimeout(t); window.speechSynthesis?.cancel(); if (currentAudio) { currentAudio.pause(); currentAudio = null; } };
+    return () => { clearTimeout(t); stopSpeech(); };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // The config name is the hero title in this design (the chip is gone).
+  const configTitle = config ? CONFIG_LABELS[config] : 'Your next you';
 
   return (
     <div className="era-screen reveal-screen">
       <div className="reveal-inner">
-        <div className="reveal-label">Your next you</div>
-
-        <MorphSilhouette
-          variant="hero"
-          resolvedConfigId={config}
-          illuminate={illuminate}
-          primaryColor={primary}
-          accentColor={accent}
-          className="reveal-silhouette"
-        />
-
-        <h1 className="reveal-era-name" style={{ color: primary }}>
-          {fs.headline}
-        </h1>
-
-        <p className="reveal-blurb">{fs.narrative}</p>
-
-        <div className="reveal-config-chip" style={{ color: accent, borderColor: `${accent}55`, background: `${accent}14` }}>
-          {config ? CONFIG_LABELS[config] : 'The vehicle built for this'}
+        {/* Title sits over the top of the plate (Figma: -32px at 45px) */}
+        <div className="reveal-hero-stack">
+          <h1 className="reveal-config-title">{configTitle}</h1>
+          <div className="reveal-hero-art">
+            <img src={REVEAL_ART} alt="" aria-hidden="true" />
+          </div>
         </div>
 
-        <div className="reveal-ctas">
-          <button className="btn-primary-era" onClick={onNext} style={{ background: primary }}>
-            Continue <ChevronRight size={14} />
-          </button>
-          <button className="btn-ghost-era" onClick={onRestart}>
-            Start over
-          </button>
+        <div className="reveal-copy">
+          <h2 className="reveal-headline">{fs.headline}</h2>
+          <p className="reveal-narrative">{fs.narrative}</p>
+
+          <div className="reveal-ctas">
+            <button className="reveal-continue" onClick={onNext}>Continue</button>
+            <button className="reveal-startover" onClick={onRestart}>Start over</button>
+          </div>
         </div>
       </div>
     </div>
@@ -870,8 +963,7 @@ function AskCoachPanel({ reveal, userName, discoverySummary, onClose }: {
     setIsSpeaking(true);
     speak(opener, () => setIsSpeaking(false));
     return () => {
-      window.speechSynthesis?.cancel();
-      if (currentAudio) { currentAudio.pause(); currentAudio = null; }
+      stopSpeech();
       recRef.current?.stop();
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -921,8 +1013,7 @@ function AskCoachPanel({ reveal, userName, discoverySummary, onClose }: {
     const SRA = (window as typeof window & { SpeechRecognition?: unknown; webkitSpeechRecognition?: unknown }).SpeechRecognition
              || (window as typeof window & { webkitSpeechRecognition?: unknown }).webkitSpeechRecognition;
     if (!SRA) return;
-    window.speechSynthesis?.cancel();
-    if (currentAudio) { currentAudio.pause(); currentAudio = null; }
+    stopSpeech();
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const rec = new (SRA as any)();
@@ -1088,10 +1179,7 @@ export default function DiscoverApp() {
   const go = (s: Screen) => setScreen(s);
 
   const restart = () => {
-    if (typeof window !== 'undefined') {
-      window.speechSynthesis?.cancel();
-      if (currentAudio) { currentAudio.pause(); currentAudio = null; }
-    }
+    stopSpeech();
     setFlowKey(k => k + 1);
     setReveal(null);
     setDiscoveryCtx(null);
@@ -1135,7 +1223,7 @@ export default function DiscoverApp() {
             onToggleMood={toggleMood}
             mobileFrame={mobileFrame}
             onToggleFrame={toggleMobileFrame}
-            onStart={() => go('intro')}
+            onStart={() => { primeAudio(); go('intro'); }}
           />
         )}
         {screen === 'intro' && (

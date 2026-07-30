@@ -3,18 +3,10 @@
 import { useEffect, useRef, useState } from 'react';
 import { useChat } from '@/app/frontend/hooks/useChat';
 import type { GothamRevealPayload, ConfigId } from '@/app/frontend/hooks/useChat';
-import MorphSilhouette, { SILHOUETTE_PATHS } from '@/app/frontend/components/MorphSilhouette';
 import { fordBrand, CONFIG_LABELS } from '@/app/theme/ford-brand';
 
 // ─── TYPES ───────────────────────────────────────────────────────────────────
 type Screen = 'landing' | 'intro' | 'chat' | 'reveal' | 'capture' | 'share';
-
-// ─── BRAND DEFAULTS ──────────────────────────────────────────────────────────
-const DEFAULT_PRIMARY = fordBrand.colorFordBrightBlue; // #066FEF
-const DEFAULT_ACCENT  = '#4B9BFF';
-
-const HEX_RE = /^#[0-9a-fA-F]{6}$/;
-const safeHex = (v: string | undefined, fallback: string) => (v && HEX_RE.test(v) ? v : fallback);
 
 // Validate the model's config_id against the five known shapes; fall back safely.
 const KNOWN_CONFIGS = Object.keys(CONFIG_LABELS) as ConfigId[];
@@ -204,13 +196,6 @@ async function speak(text: string, onEnd?: () => void) {
 }
 
 // ─── ICONS ───────────────────────────────────────────────────────────────────
-function ChevronLeft({ size = 16 }: { size?: number }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 18 18" fill="none">
-      <path d="M11 4l-5 5 5 5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
-}
 function MicIcon({ size = 22, color = 'currentColor' }: { size?: number; color?: string }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none">
@@ -277,7 +262,20 @@ function Waveform() {
   );
 }
 
-// ─── INTRO SCREEN ────────────────────────────────────────────────────────────
+// ─── SHARED FIGMA ASSETS ─────────────────────────────────────────────────────
+// Exported from "Ford Gotham Discovery". See README → "Design assets".
+const UI_GLOW = '/ui/glow-orb.svg';    // 46:372 — loading-screen radial glow
+const UI_BACK = '/ui/back-circle.svg'; // 41:681 — 61px circle + steel arrow
+
+function BackButton({ onClick }: { onClick: () => void }) {
+  return (
+    <button className="gd-back" onClick={onClick} aria-label="Back">
+      <img src={UI_BACK} alt="" aria-hidden="true" />
+    </button>
+  );
+}
+
+// ─── INTRO / LOADING SCREEN (Figma 41:550) ───────────────────────────────────
 const INTRO_SPEECH = "Take a breath. This is a moment just for you — no products, no pitch. Tell me a little about who you are and who you're becoming, and I'll show you the vehicle built to take you there.";
 
 function IntroScreen({ onDone }: { onDone: () => void }) {
@@ -296,14 +294,9 @@ function IntroScreen({ onDone }: { onDone: () => void }) {
 
   return (
     <div className={`intro-screen${exiting ? ' exiting' : ''}`}>
-      <div className="intro-ring intro-ring-1" />
-      <div className="intro-ring intro-ring-2" />
-      <div className="intro-ring intro-ring-3" />
-      <div className="intro-dot intro-dot-1" />
-      <div className="intro-dot intro-dot-2" />
-
-      <div className="intro-orb-wrap">
-        <CoachOrb size={200} state="speaking" />
+      {/* 591px radial glow — Figma 46:372 */}
+      <div className="intro-glow">
+        <img src={UI_GLOW} alt="" aria-hidden="true" />
       </div>
 
       <div className="intro-text-area">
@@ -314,64 +307,39 @@ function IntroScreen({ onDone }: { onDone: () => void }) {
   );
 }
 
-// ─── LANDING SCREEN ──────────────────────────────────────────────────────────
-function LandingScreen({ mood, onToggleMood, mobileFrame, onToggleFrame, onStart }: {
-  mood: string;
-  onToggleMood: () => void;
+// ─── LANDING SCREEN (Figma 41:548) ───────────────────────────────────────────
+function LandingScreen({ mobileFrame, onToggleFrame, onStart }: {
   mobileFrame: boolean;
   onToggleFrame: () => void;
   onStart: () => void;
 }) {
   return (
     <div className="era-screen landing-screen">
-      {/* Ambient silhouette drifting behind the hero */}
-      <MorphSilhouette variant="ambient" className="landing-silhouette" primaryColor={DEFAULT_PRIMARY} accentColor={DEFAULT_ACCENT} />
-
-      <div className="era-topbar">
-        <div className="era-brand">
-          {/* PLACEHOLDER brand lockup — swap for licensed Ford oval + wordmark */}
-          <strong>{fordBrand.wordmarkText}</strong><br />Discover Your Next You
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-          <button className="era-mood-toggle" onClick={onToggleFrame} aria-label="Toggle mobile frame">
-            {mobileFrame ? (
-              <svg width="11" height="14" viewBox="0 0 11 14" fill="none">
-                <rect x="0.6" y="0.6" width="9.8" height="12.8" rx="1.8" stroke="currentColor" strokeWidth="1.2" />
-                <rect x="4.3" y="11" width="2.4" height="0.6" rx="0.3" fill="currentColor" />
-              </svg>
-            ) : (
-              <svg width="14" height="12" viewBox="0 0 14 12" fill="none">
-                <rect x="0.6" y="0.6" width="12.8" height="8.8" rx="1.2" stroke="currentColor" strokeWidth="1.2" />
-                <rect x="4.5" y="10.4" width="5" height="0.8" rx="0.4" fill="currentColor" />
-              </svg>
-            )}
-            <span>{mobileFrame ? 'Mobile' : 'Desktop'}</span>
-          </button>
-          <button className="era-mood-toggle" onClick={onToggleMood}>
-            <div className="era-mood-dot" />
-            <span>{mood === 'sage' ? 'Light' : 'Dark'}</span>
-          </button>
-          <div className="era-bf-tag"><div className="era-bf-dot" />Teaser · placeholder brand</div>
-        </div>
-      </div>
+      {/* Demo-only — not part of the Figma frame */}
+      <button className="gd-demo-toggle" onClick={onToggleFrame} aria-label="Toggle mobile frame">
+        {mobileFrame ? 'Mobile' : 'Desktop'}
+      </button>
 
       <div className="landing-hero">
-        <h1 className="landing-headline">
-          In five years,<br /><em>who will you be?</em>
-        </h1>
+        <h1 className="landing-headline">In five years,</h1>
+
+        {/* The three pastels label the question, then return as the user's
+            chat bubbles in the same order. */}
+        <div className="landing-chips" aria-label="who will you be?">
+          <span className="landing-chip landing-chip-who">who</span>
+          <span className="landing-chip landing-chip-will">will you</span>
+          <span className="landing-chip landing-chip-be">be?</span>
+        </div>
+
         <p className="landing-sub">
           Tell us your vision, and we&apos;ll show you the vehicle built to take you there.
         </p>
-      </div>
 
-      <div className="landing-cta-area">
-        <button className="landing-cta" onClick={onStart}>
-          <MicIcon size={18} color="currentColor" />
-          Begin
-        </button>
-        <div className="landing-status">
-          <div className="live-dot" />
-          Your name and two questions · about 60 seconds
+        <div className="landing-cta-area">
+          <button className="gd-pill landing-cta" onClick={onStart}>Begin</button>
+          <div className="landing-status">
+            Your name and two questions • about 60 seconds
+          </div>
         </div>
       </div>
     </div>
@@ -513,26 +481,23 @@ function ChatScreen({ onComplete, onBack }: {
   const progressCount = Math.max(0, messages.filter(m => m.role === 'user').length - 1);
   const isBusy = state === 'loading' || state === 'revealed';
 
-  // Running transcript drives the live silhouette morph (user's words + interim)
-  const liveTranscript =
-    visibleMsgs.filter(m => m.role === 'user').map(m => m.content).join(' ') + ' ' + interimText;
+  // Each user answer takes the next colour in the palette (terra → sage → steel),
+  // matching the order of the who / will you / be? chips on the landing screen.
+  const userTurn = new Map<string, number>();
+  visibleMsgs.filter(m => m.role === 'user').forEach((m, i) => userTurn.set(m.id, i % 3));
+  const nextUserTurn = userTurn.size % 3;
 
   return (
-    <div className="era-screen chat-screen" style={{ overflow: 'hidden' }}>
-      {/* Ambient morphing silhouette behind the conversation */}
-      <MorphSilhouette variant="ambient" className="chat-silhouette" transcript={liveTranscript} primaryColor={DEFAULT_PRIMARY} accentColor={DEFAULT_ACCENT} />
-
+    <div className="era-screen chat-screen">
       <div className="chat-header">
-        <button className="era-icon-btn" onClick={onBack} aria-label="Back">
-          <ChevronLeft size={16} />
-        </button>
-        <CoachOrb size={32} state={
-          state === 'loading' ? 'thinking'
-          : isListening ? 'listening'
-          : isSpeaking ? 'speaking'
-          : 'idle'
-        } />
-        <div style={{ flex: 1 }}>
+        <BackButton onClick={onBack} />
+        <div className={`chat-avatar${
+          state === 'loading' ? ' thinking'
+          : isListening ? ' listening'
+          : isSpeaking ? ' speaking'
+          : ''
+        }`} />
+        <div style={{ flex: 1, minWidth: 0 }}>
           <div className="chat-ali-label">Your guide</div>
           <div className="chat-ali-sub">
             {state === 'loading' ? 'Thinking…'
@@ -551,13 +516,13 @@ function ChatScreen({ onComplete, onBack }: {
       <div ref={scrollRef} className="chat-messages">
         {visibleMsgs.map(m => (
           <div key={m.id} className={`chat-bubble-wrap ${m.role === 'assistant' ? 'ali' : 'user'}`}>
-            <div className={`chat-bubble ${m.role === 'assistant' ? 'ali' : 'user'}`}>{m.content}</div>
+            <div className={`chat-bubble ${m.role === 'assistant' ? 'ali' : `user turn-${userTurn.get(m.id) ?? 0}`}`}>{m.content}</div>
           </div>
         ))}
 
         {isListening && interimText && (
           <div className="chat-bubble-wrap user" style={{ opacity: 0.55 }}>
-            <div className="chat-bubble user">{interimText}</div>
+            <div className={`chat-bubble user turn-${nextUserTurn}`}>{interimText}</div>
           </div>
         )}
 
@@ -708,7 +673,6 @@ function RevealScreen({ reveal, onNext, onRestart }: {
   return (
     <div className="era-screen reveal-screen">
       <div className="reveal-inner">
-        {/* Title sits over the top of the plate (Figma: -32px at 45px) */}
         <div className="reveal-hero-stack">
           <h1 className="reveal-config-title">{configTitle}</h1>
           <div className="reveal-hero-art">
@@ -721,8 +685,8 @@ function RevealScreen({ reveal, onNext, onRestart }: {
           <p className="reveal-narrative">{fs.narrative}</p>
 
           <div className="reveal-ctas">
-            <button className="reveal-continue" onClick={onNext}>Continue</button>
-            <button className="reveal-startover" onClick={onRestart}>Start over</button>
+            <button className="gd-pill reveal-continue" onClick={onNext}>Continue</button>
+            <button className="gd-ghost reveal-startover" onClick={onRestart}>Start over</button>
           </div>
         </div>
       </div>
@@ -730,12 +694,10 @@ function RevealScreen({ reveal, onNext, onRestart }: {
   );
 }
 
-// ─── CAPTURE SCREEN (email, skippable) ─────────────────────────────────────────
-function CaptureScreen({ reveal, onNext, onBack }: {
-  reveal: GothamRevealPayload; onNext: () => void; onBack: () => void;
+// ─── CAPTURE / SIGN UP SCREEN (Figma 41:398) — email, skippable ───────────────
+function CaptureScreen({ onNext, onBack }: {
+  onNext: () => void; onBack: () => void;
 }) {
-  const fs = reveal.future_self;
-  const primary = safeHex(fs.primaryColor, DEFAULT_PRIMARY);
   const [email, setEmail] = useState('');
   const [status, setStatus] = useState<'idle' | 'sending' | 'error'>('idle');
   const valid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
@@ -755,18 +717,13 @@ function CaptureScreen({ reveal, onNext, onBack }: {
 
   return (
     <div className="era-screen capture-screen">
-      <div className="chat-header">
-        <button className="era-icon-btn" onClick={onBack} aria-label="Back">
-          <ChevronLeft size={16} />
-        </button>
-        <div className="chat-ali-label" style={{ flex: 1 }}>Stay close to it</div>
+      <div className="gd-topbar">
+        <BackButton onClick={onBack} />
       </div>
 
       <div className="capture-inner">
-        <div className="capture-label">The real reveal is coming</div>
-        <h2 className="capture-title">
-          Be the first to see<br /><em style={{ color: primary }}>the vehicle built for this</em>
-        </h2>
+        <div className="capture-label">The reveal is coming</div>
+        <h2 className="capture-title">Be the first to see the vehicle built for this</h2>
         <p className="capture-sub">
           We&apos;ll let you know when there&apos;s more to show. No spam — just the moment it&apos;s ready.
         </p>
@@ -786,45 +743,26 @@ function CaptureScreen({ reveal, onNext, onBack }: {
 
         <div className="capture-ctas">
           <button
-            className="btn-primary-era"
+            className="gd-pill capture-keep"
             onClick={submit}
             disabled={status === 'sending' || !email.trim()}
-            style={{ background: primary }}
           >
             {status === 'sending' ? 'One moment…' : 'Keep me updated'}
           </button>
-          <button className="btn-ghost-era" onClick={onNext}>
-            Skip for now
-          </button>
+          <button className="gd-ghost" onClick={onNext}>Skip for now</button>
         </div>
       </div>
     </div>
   );
 }
 
-// ─── SHARE SCREEN ────────────────────────────────────────────────────────────
-function StaticSilhouette({ configId, primary, accent }: { configId: ConfigId | null; primary: string; accent: string }) {
-  // Solid-fill, resolved shape — reliable under html2canvas (no gradient refs).
-  const d = SILHOUETTE_PATHS[configId ?? 'neutral_base'];
-  return (
-    <svg viewBox="0 0 240 128" width="100%" height="100%" preserveAspectRatio="xMidYMax meet">
-      <ellipse cx="120" cy="112" rx="100" ry="9" fill={accent} opacity="0.22" />
-      <path d={d} fill={primary} stroke={accent} strokeWidth="1.4" strokeLinejoin="round" />
-      <g fill="#05060B" stroke={accent} strokeWidth="1.4">
-        <circle cx="66" cy="94" r="16" />
-        <circle cx="174" cy="94" r="16" />
-      </g>
-    </svg>
-  );
-}
-
+// ─── SHARE / SOCIAL CARD SCREEN (Figma 41:335) ───────────────────────────────
 function ShareScreen({ reveal, onRestart, onBack }: {
   reveal: GothamRevealPayload; onRestart: () => void; onBack: () => void;
 }) {
   const fs = reveal.future_self;
-  const primary = safeHex(fs.primaryColor, DEFAULT_PRIMARY);
-  const accent  = safeHex(fs.accentColor, DEFAULT_ACCENT);
-  const config  = safeConfig(fs.config_id);
+  const config = safeConfig(fs.config_id);
+  const configTitle = config ? CONFIG_LABELS[config] : 'Your next you';
   const cardRef = useRef<HTMLDivElement>(null);
   const [copied, setCopied] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -878,46 +816,44 @@ function ShareScreen({ reveal, onRestart, onBack }: {
 
   return (
     <div className="era-screen share-screen">
-      <div className="chat-header">
-        <button className="era-icon-btn" onClick={onBack} aria-label="Back">
-          <ChevronLeft size={16} />
-        </button>
-        <div className="chat-ali-label" style={{ flex: 1 }}>Share your next you</div>
+      <div className="gd-topbar">
+        <BackButton onClick={onBack} />
       </div>
 
       <div className="share-card-area">
-        <div
-          ref={cardRef}
-          className="share-card-outer"
-          style={{
-            background: `linear-gradient(160deg, ${primary} 0%, #05060B 78%)`,
-            boxShadow: `0 24px 60px ${primary}55`,
-          }}
-        >
-          <div className="share-card-glow" style={{ background: `radial-gradient(circle, ${accent}55, transparent 65%)` }} />
-
-          <div className="share-card-top">
-            {/* PLACEHOLDER Ford lockup — swap for licensed oval + wordmark */}
-            <img src={fordBrand.logoOvalSrc} alt="" className="share-card-oval" crossOrigin="anonymous" onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
-            <div className="share-card-wordmark">{fordBrand.wordmarkText}</div>
+        <div ref={cardRef} className="share-card-outer">
+          {/* Runs to the card's bottom edge; the footer band overlays it */}
+          <div className="share-card-plate">
+            <img src={REVEAL_ART} alt="" aria-hidden="true" />
+            {/* PLACEHOLDER vehicle wordmark — the Figma card shows a licensed
+                lockup here (node 46:360). Confirm the public name per RSF. */}
+            <div className="share-card-vehicle">{fordBrand.vehicleWordmarkText}</div>
           </div>
 
-          <div className="share-card-body">
-            <div className="share-card-pre">I&apos;m becoming…</div>
-            <div className="share-card-name">{fs.headline}</div>
-            <div className="share-card-silhouette">
-              <StaticSilhouette configId={config} primary={accent} accent="#ffffff" />
+          <div className="share-card-inner">
+            <div className="share-card-eyebrow">{configTitle}</div>
+            <div className="share-card-body">
+              <div className="share-card-pre">I&apos;m becoming…</div>
+              <div className="share-card-name">{fs.headline}</div>
             </div>
           </div>
 
           <div className="share-card-footer">
             <span className="share-card-hashtags">#DiscoverYourNextYou #Ford</span>
+            {/* PLACEHOLDER Ford oval — swap for the licensed asset */}
+            <img
+              src={fordBrand.logoOvalSrc}
+              alt=""
+              className="share-card-oval"
+              crossOrigin="anonymous"
+              onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }}
+            />
           </div>
         </div>
       </div>
 
       <div className="share-actions">
-        <button className="share-action-btn share-action-fill" onClick={handleShare} style={{ background: primary }}>
+        <button className="share-action-btn share-action-fill" onClick={handleShare}>
           Share
         </button>
         <button className="share-action-btn share-action-outline" onClick={handleCopy}>
@@ -1147,26 +1083,13 @@ export default function DiscoverApp() {
   const [askOpen,      setAskOpen]      = useState(false);
   const [hintShown,    setHintShown]    = useState(false);
   const [showHint,     setShowHint]     = useState(false);
-  const [mood,         setMood]         = useState('sage');
   const [mobileFrame,  setMobileFrame]  = useState(false);
 
   useEffect(() => {
-    const saved = localStorage.getItem('dyny-mood') || 'sage';
-    setMood(saved);
     setMobileFrame(localStorage.getItem('dyny-mobile-frame') === '1');
     primeVoices();
     prewarmTTS();
   }, []);
-
-  useEffect(() => {
-    document.documentElement.setAttribute('data-mood', mood);
-  }, [mood]);
-
-  const toggleMood = () => {
-    const next = mood === 'sage' ? 'sand' : 'sage';
-    setMood(next);
-    localStorage.setItem('dyny-mood', next);
-  };
 
   const toggleMobileFrame = () => {
     setMobileFrame(prev => {
@@ -1219,8 +1142,6 @@ export default function DiscoverApp() {
       <div key={screen} style={{ position: 'absolute', inset: 0 }}>
         {screen === 'landing' && (
           <LandingScreen
-            mood={mood}
-            onToggleMood={toggleMood}
             mobileFrame={mobileFrame}
             onToggleFrame={toggleMobileFrame}
             onStart={() => { primeAudio(); go('intro'); }}
@@ -1240,7 +1161,7 @@ export default function DiscoverApp() {
           <RevealScreen reveal={reveal} onNext={() => go('capture')} onRestart={restart} />
         )}
         {screen === 'capture' && reveal && (
-          <CaptureScreen reveal={reveal} onNext={() => go('share')} onBack={() => go('reveal')} />
+          <CaptureScreen onNext={() => go('share')} onBack={() => go('reveal')} />
         )}
         {screen === 'share' && reveal && (
           <ShareScreen reveal={reveal} onRestart={restart} onBack={() => go('capture')} />

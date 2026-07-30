@@ -90,7 +90,13 @@ button { font-family: inherit; -webkit-tap-highlight-color: transparent; }
 @keyframes fadeUp    { from { opacity:0; transform:translateY(14px); } to { opacity:1; transform:none; } }
 
 /* ── App shell ── */
-#era-app { position:fixed; inset:0; overflow:hidden; background:var(--bg); }
+/* container-type makes every cqw below resolve against the APP's width, not the
+   window's. Without it, mobile-frame demo mode (a 390px box on a 1440px window)
+   sized type off the window and blew the layout out past the frame. */
+#era-app {
+  position:fixed; inset:0; overflow:hidden; background:var(--bg);
+  container-type:inline-size; container-name:app;
+}
 .era-screen {
   position:absolute; inset:0; display:flex; flex-direction:column;
   background:var(--bg); overflow-y:auto; -webkit-overflow-scrolling:touch;
@@ -109,7 +115,7 @@ button { font-family: inherit; -webkit-tap-highlight-color: transparent; }
 }
 .gd-pill {
   background:var(--gd-steel); color:#000;
-  font-size:clamp(12px, 1.3vw, 15px);
+  font-size:clamp(12px, 1.3cqw, 15px);
   filter:var(--gd-lift);
   transition:background 0.2s ease-out, transform 0.2s ease-out, filter 0.2s ease-out;
 }
@@ -119,14 +125,14 @@ button { font-family: inherit; -webkit-tap-highlight-color: transparent; }
 /* Bare glyphs on black — no drop-shadow here, it just smudges the letters. */
 .gd-ghost {
   background:none; color:var(--gd-grey);
-  font-size:clamp(12px, 1.3vw, 15px);
+  font-size:clamp(12px, 1.3cqw, 15px);
   transition:color 0.18s ease-out;
 }
 .gd-ghost:hover { color:#B5B5B5; }
 
 /* Back button — Figma node 41:681 / 46:279, a 61px #14141D circle + steel arrow */
 .gd-back {
-  width:clamp(40px, 11vw, 61px); height:clamp(40px, 11vw, 61px);
+  width:clamp(40px, 11cqw, 61px); height:clamp(40px, 11cqw, 61px);
   border:none; border-radius:50%; background:none; padding:0;
   cursor:pointer; flex-shrink:0;
   display:flex; align-items:center; justify-content:center;
@@ -151,7 +157,7 @@ button { font-family: inherit; -webkit-tap-highlight-color: transparent; }
    reads out of the lower half of the glow — hence the translate. */
 .intro-glow {
   position:absolute; left:50%; top:50%;
-  width:min(591px, 152vw); height:min(591px, 152vw);
+  width:min(591px, 152cqw); height:min(591px, 152cqw);
   transform:translate(-50%, -62%);
   pointer-events:none; z-index:0;
 }
@@ -160,17 +166,17 @@ button { font-family: inherit; -webkit-tap-highlight-color: transparent; }
 .intro-text-area { position:relative; z-index:1; text-align:center; width:100%; padding:0 20px; }
 .intro-greeting {
   font-family:var(--font-display); font-weight:400;
-  font-size:clamp(30px, 7.6vw, 75px); line-height:1;
+  font-size:clamp(30px, 7.6cqw, 75px); line-height:1;
   color:#fff; text-wrap:balance;
   animation: fadeUp 0.8s ease-out both 0.25s;
 }
 .intro-greeting em { font-style:italic; color:var(--gd-steel); }
 .intro-tagline {
   font-family:var(--font-display); font-weight:700;
-  font-size:clamp(9px, 1.5vw, 14.4px);
+  font-size:clamp(9px, 1.5cqw, 14.4px);
   letter-spacing:0.30em; text-indent:0.30em; /* 4.32px @ 14.4px */
   text-transform:uppercase; color:#fff;
-  margin-top:clamp(12px, 2.3vw, 23px);
+  margin-top:clamp(12px, 2.3cqw, 23px);
   animation: fadeUp 0.8s ease-out both 0.55s;
 }
 
@@ -188,13 +194,19 @@ button { font-family: inherit; -webkit-tap-highlight-color: transparent; }
 .landing-hero {
   flex:1; display:flex; flex-direction:column;
   align-items:center; justify-content:center;
-  gap:clamp(10px, 2.4vw, 25px);
+  gap:clamp(10px, 2.4cqw, 25px);
   width:100%; max-width:858px; /* 818 + 2x20 gutter */
   margin:0 auto; padding:20px; text-align:center; position:relative; z-index:1;
+
+  /* Headline and chips are both 90px in Figma and read as one sentence, so they
+     share a scale. The CHIP ROW is what binds it: three words side by side need
+     ~9.1em of width, so the scale is set from that, leaving ~20% of the column
+     as margin instead of running to the edges. */
+  --gd-hero-size: clamp(20px, calc(8.4cqw - 3px), 90px);
 }
 .landing-headline {
   font-family:var(--font-display); font-weight:400;
-  font-size:clamp(34px, 9.6vw, 90px); line-height:1;
+  font-size:var(--gd-hero-size); line-height:1;
   color:#fff; letter-spacing:-0.005em;
   animation: fadeUp 0.7s ease-out both 0.1s;
 }
@@ -203,8 +215,9 @@ button { font-family: inherit; -webkit-tap-highlight-color: transparent; }
 .landing-chips {
   display:flex; align-items:flex-end; justify-content:center;
   flex-wrap:nowrap; width:100%;
-  font-size:clamp(34px, 9.6vw, 90px); /* the chips' own type scale */
-  gap:0.233em;                        /* 21px @ 90px */
+  font-size:var(--gd-hero-size);  /* the chips' own type scale */
+  gap:0.233em;                    /* 21px @ 90px */
+  max-width:100%;
   animation: fadeUp 0.7s ease-out both 0.24s;
 }
 .landing-chip {
@@ -220,7 +233,7 @@ button { font-family: inherit; -webkit-tap-highlight-color: transparent; }
 
 .landing-sub {
   font-family:var(--font-display); font-style:italic; font-weight:400;
-  font-size:clamp(13px, 1.9vw, 20px); line-height:1.2;
+  font-size:clamp(13px, 1.9cqw, 20px); line-height:1.2;
   color:var(--gd-grey); max-width:32em;
   animation: fadeUp 0.7s ease-out both 0.38s;
 }
@@ -228,14 +241,14 @@ button { font-family: inherit; -webkit-tap-highlight-color: transparent; }
 .landing-cta-area {
   width:100%;
   display:flex; flex-direction:column; align-items:center;
-  gap:clamp(10px, 2.4vw, 25px);
+  gap:clamp(10px, 2.4cqw, 25px);
   animation: fadeUp 0.7s ease-out both 0.52s;
 }
 /* Figma height is 84px — tall and confident, so it gets its own size */
-.landing-cta { height:clamp(56px, 5.8vw, 84px); }
+.landing-cta { height:clamp(56px, 5.8cqw, 84px); }
 .landing-status {
   font-family:var(--font-display); font-weight:400;
-  font-size:clamp(13px, 1.9vw, 20px); line-height:1.2;
+  font-size:clamp(13px, 1.9cqw, 20px); line-height:1.2;
   color:var(--gd-grey); text-align:center;
 }
 
@@ -259,14 +272,14 @@ button { font-family: inherit; -webkit-tap-highlight-color: transparent; }
 .chat-screen { background:var(--gd-black); overflow:hidden; }
 
 .chat-header {
-  display:flex; align-items:center; gap:clamp(10px, 2vw, 16px);
-  padding:clamp(14px, 2.2vw, 32px) clamp(16px, 3.3vw, 48px);
+  display:flex; align-items:center; gap:clamp(10px, 2cqw, 16px);
+  padding:clamp(14px, 2.2cqw, 32px) clamp(16px, 3.3cqw, 48px);
   flex-shrink:0; position:relative; z-index:1;
   border-bottom:1px solid var(--line);
 }
 /* 45px gradient avatar (41:664) — the three pastels on one axis */
 .chat-avatar {
-  width:clamp(34px, 3.1vw, 45px); height:clamp(34px, 3.1vw, 45px);
+  width:clamp(34px, 3.1cqw, 45px); height:clamp(34px, 3.1cqw, 45px);
   border-radius:50%; flex-shrink:0;
   background:linear-gradient(212.68deg,
     var(--gd-steel) 16%, var(--gd-sage) 49.4%, var(--gd-terra) 90.7%);
@@ -277,18 +290,18 @@ button { font-family: inherit; -webkit-tap-highlight-color: transparent; }
 
 .chat-ali-label {
   font-family:var(--font-display); font-weight:400;
-  font-size:clamp(19px, 2.1vw, 30px); line-height:1.05; color:#fff;
+  font-size:clamp(19px, 2.1cqw, 30px); line-height:1.05; color:#fff;
 }
 .chat-ali-sub {
   font-family:var(--font-display); font-style:italic; font-weight:400;
-  font-size:clamp(11px, 1.05vw, 15px); line-height:1.2;
+  font-size:clamp(11px, 1.05cqw, 15px); line-height:1.2;
   color:var(--gd-grey-2); margin-top:3px;
 }
 
 .chat-messages {
   flex:1; overflow-y:auto; position:relative; z-index:1;
-  padding:clamp(16px, 3vw, 40px) clamp(16px, 3.3vw, 48px) 8px;
-  display:flex; flex-direction:column; gap:clamp(12px, 2.2vw, 28px);
+  padding:clamp(16px, 3cqw, 40px) clamp(16px, 3.3cqw, 48px) 8px;
+  display:flex; flex-direction:column; gap:clamp(12px, 2.2cqw, 28px);
 }
 
 .chat-bubble-wrap { max-width:84%; animation:rise 0.32s ease-out both; }
@@ -300,9 +313,9 @@ button { font-family: inherit; -webkit-tap-highlight-color: transparent; }
    height, so the browser clamps them to a perfect half-round — which is
    exactly how the pill-shaped short bubbles in the design are drawn. */
 .chat-bubble {
-  padding:clamp(11px, 1vw, 14px) clamp(16px, 1.6vw, 23px);
+  padding:clamp(11px, 1cqw, 14px) clamp(16px, 1.6cqw, 23px);
   font-family:var(--font-display); font-weight:400;
-  font-size:clamp(14px, 1.15vw, 16.5px); line-height:1.45;
+  font-size:clamp(14px, 1.15cqw, 16.5px); line-height:1.45;
 }
 .chat-bubble.ali {
   background:var(--gd-surface); color:#fff;
@@ -336,14 +349,14 @@ button { font-family: inherit; -webkit-tap-highlight-color: transparent; }
 /* Dock — not drawn in the Figma frame; restyled to the palette so the voice
    loop the frames imply ("Speaking…") still has its controls. */
 .chat-dock {
-  padding:12px clamp(16px, 3.3vw, 48px) 28px;
+  padding:12px clamp(16px, 3.3cqw, 48px) 28px;
   border-top:1px solid var(--line);
   flex-shrink:0; display:flex; flex-direction:column; align-items:center; gap:10px;
   position:relative; z-index:1;
 }
 .chat-dock-hint {
   font-family:var(--font-display); font-style:italic;
-  font-size:clamp(12px, 1.05vw, 15px); color:var(--gd-grey-2);
+  font-size:clamp(12px, 1.05cqw, 15px); color:var(--gd-grey-2);
 }
 
 .input-mode-toggle {
@@ -367,7 +380,7 @@ button { font-family: inherit; -webkit-tap-highlight-color: transparent; }
   flex:1; height:50px; padding:0 24px; border-radius:100px;
   border:1px solid rgba(255,255,255,0.10); background:var(--gd-surface);
   color:#fff; font-family:var(--font-display);
-  font-size:clamp(14px, 1.4vw, 20px); outline:none;
+  font-size:clamp(14px, 1.4cqw, 20px); outline:none;
   transition:border-color 0.18s;
 }
 .chat-text-input input:focus { border-color:var(--gd-steel); }
@@ -392,20 +405,20 @@ button { font-family: inherit; -webkit-tap-highlight-color: transparent; }
 
 .reveal-inner {
   flex:1; display:flex; flex-direction:column;
-  align-items:center; justify-content:center; gap:clamp(16px, 2.6vw, 38px);
+  align-items:center; justify-content:center; gap:clamp(16px, 2.6cqw, 38px);
   width:100%; max-width:644px; /* 604 content + 2x20 gutter */
-  margin:0 auto; padding:clamp(24px, 4vw, 40px) 20px clamp(24px, 3vw, 36px);
+  margin:0 auto; padding:clamp(24px, 4cqw, 40px) 20px clamp(24px, 3cqw, 36px);
   text-align:center; position:relative;
 }
 
 .reveal-hero-stack {
   display:flex; flex-direction:column; align-items:center;
-  width:100%; gap:clamp(8px, 1.4vw, 20px);
+  width:100%; gap:clamp(8px, 1.4cqw, 20px);
 }
 .reveal-config-title {
   width:100%;
   font-family:var(--font-display); font-weight:700;
-  font-size:clamp(19px, 5.2vw, 45px); line-height:1.16;
+  font-size:clamp(19px, 5.2cqw, 45px); line-height:1.16;
   /* 13.5px tracking @ 45px; text-indent re-centres the trailing letter-space */
   letter-spacing:0.30em; text-indent:0.30em;
   text-transform:uppercase; color:#fff;
@@ -414,24 +427,28 @@ button { font-family: inherit; -webkit-tap-highlight-color: transparent; }
 .reveal-hero-art { position:relative; width:100%; aspect-ratio:604 / 388; overflow:hidden; }
 .reveal-hero-art img {
   position:absolute; inset:0; width:100%; height:100%; display:block;
-  /* Figma crop: the square plate at h 155.66%, top -17.01% of the 388px window */
-  object-fit:cover; object-position:50% 30.5%;
+  object-fit:cover;
 }
+/* The warm plate is a 1:1 export, so it needs the Figma crop (h 155.66%, top
+   -17.01% of the 388px window). The cool plate was exported at 1196x764 — the
+   604/388 box's own aspect — so it fits with no crop. */
+.reveal-hero-art[data-theme="warm"] img { object-position:50% 30.5%; }
+.reveal-hero-art[data-theme="cool"] img { object-position:50% 50%; }
 
 .reveal-copy {
   display:flex; flex-direction:column; align-items:center;
-  gap:clamp(14px, 2.4vw, 26px); width:100%; max-width:570px;
+  gap:clamp(14px, 2.4cqw, 26px); width:100%; max-width:570px;
 }
 .reveal-headline {
   font-family:var(--font-display); font-weight:700; color:#fff;
-  font-size:clamp(21px, 4.5vw, 35px); line-height:1.28;
+  font-size:clamp(21px, 4.5cqw, 35px); line-height:1.28;
   letter-spacing:-0.004em; text-wrap:balance;
 }
 .reveal-narrative {
   font-family:var(--font-display); font-weight:400; color:#fff;
-  font-size:clamp(13.5px, 1.6vw, 15px); line-height:1.35;
+  font-size:clamp(13.5px, 1.6cqw, 15px); line-height:1.35;
 }
-.reveal-ctas { display:flex; flex-direction:column; align-items:center; gap:clamp(14px, 2.2vw, 25px); width:100%; }
+.reveal-ctas { display:flex; flex-direction:column; align-items:center; gap:clamp(14px, 2.2cqw, 25px); width:100%; }
 .reveal-continue { max-width:506px; } /* Figma: 506 of the 570 column */
 .reveal-startover { max-width:570px; }
 
@@ -449,38 +466,38 @@ button { font-family: inherit; -webkit-tap-highlight-color: transparent; }
    CAPTURE / SIGN UP — Figma 41:398
    ═══════════════════════════════════════════════════════════ */
 .capture-screen { background:var(--gd-black); }
-.gd-topbar { padding:clamp(14px, 2.2vw, 32px) clamp(16px, 3.3vw, 48px); flex-shrink:0; }
+.gd-topbar { padding:clamp(14px, 2.2cqw, 32px) clamp(16px, 3.3cqw, 48px); flex-shrink:0; }
 
 .capture-inner {
   flex:1; display:flex; flex-direction:column; justify-content:center;
   align-items:center; text-align:center;
   width:100%; max-width:610px; /* 570 + 2x20 */
-  margin:0 auto; padding:0 20px clamp(32px, 5vw, 64px);
-  gap:clamp(16px, 2.6vw, 25px);
+  margin:0 auto; padding:0 20px clamp(32px, 5cqw, 64px);
+  gap:clamp(16px, 2.6cqw, 25px);
 }
 .capture-label {
   font-family:var(--font-display); font-weight:400;
-  font-size:clamp(11px, 1.05vw, 15px);
+  font-size:clamp(11px, 1.05cqw, 15px);
   letter-spacing:var(--gd-track); text-indent:var(--gd-track);
   text-transform:uppercase; color:var(--gd-grey);
 }
 .capture-title {
   font-family:var(--font-display); font-weight:700; color:#fff;
-  font-size:clamp(26px, 5.5vw, 45px); line-height:1.16;
+  font-size:clamp(26px, 5.5cqw, 45px); line-height:1.16;
   letter-spacing:-0.005em; text-wrap:balance;
 }
 .capture-sub {
   font-family:var(--font-display); font-weight:400;
-  font-size:clamp(12.5px, 1.05vw, 15px); line-height:1.35;
+  font-size:clamp(12.5px, 1.05cqw, 15px); line-height:1.35;
   color:var(--gd-grey); max-width:34em;
 }
 .capture-field { width:100%; }
 .capture-field input {
-  width:100%; height:clamp(46px, 3.5vw, 50px);
+  width:100%; height:clamp(46px, 3.5cqw, 50px);
   padding:0 24px; border-radius:100px;
   border:1px solid rgba(255,255,255,0.10); background:var(--gd-surface);
   color:#fff; font-family:var(--font-display);
-  font-size:clamp(14px, 1.4vw, 20px); outline:none;
+  font-size:clamp(14px, 1.4cqw, 20px); outline:none;
   filter:var(--gd-lift);
   transition:border-color 0.18s;
 }
@@ -490,95 +507,118 @@ button { font-family: inherit; -webkit-tap-highlight-color: transparent; }
   color:var(--gd-terra); font-family:var(--font-display);
   font-size:11px; margin-top:10px; letter-spacing:0.04em;
 }
-.capture-ctas { display:flex; flex-direction:column; align-items:center; gap:clamp(14px, 2.2vw, 25px); width:100%; }
-.capture-keep { height:clamp(44px, 3.4vw, 48px); }
+.capture-ctas { display:flex; flex-direction:column; align-items:center; gap:clamp(14px, 2.2cqw, 25px); width:100%; }
+.capture-keep { height:clamp(44px, 3.4cqw, 48px); }
 
 /* ═══════════════════════════════════════════════════════════
-   SHARE / SOCIAL CARD — Figma 41:335
-   Card is 383 x 587.5 (≈1:1.534). Everything inside is sized off the card
-   width so the rasterised PNG matches what's on screen at any viewport.
+   SHARE / SOCIAL CARD — Figma 41:334 (warm) / 41:333 (cool)
+   Card is 383.04 x 587.52. Every inner value is that reference expressed in
+   cqw (1cqw = 1% of the card's width), so the rasterised PNG matches what's
+   on screen at any viewport.
+
+   The card's own background IS the artwork: a big radial gradient whose bright
+   centre sits at 50%/79%. The plate PNG on top is transparent above and below
+   the vehicle, so the gradient reads through it as the sky and the glow. That
+   is why the plate must NOT be cropped or sized to `cover` — it is placed at
+   its natural aspect over the gradient.
    ═══════════════════════════════════════════════════════════ */
 .share-screen { background:var(--gd-black); }
 
 .share-card-area {
   flex:1; display:flex; align-items:center; justify-content:center;
-  padding:clamp(8px, 2vw, 24px) 20px;
+  padding:clamp(8px, 2cqw, 24px) 20px;
 }
 /* The card is the query container; `.share-card-inner` holds the padding. An
    element cannot use its own container units for its own layout, so the two
    have to be separate — otherwise percentage padding resolves against the
    surrounding flex row (~1400px on desktop) instead of the 383px card. */
 .share-card-outer {
-  width:100%; max-width:383px; aspect-ratio:383 / 587.5;
-  border-radius:20px; overflow:hidden; position:relative;
-  border:1px solid rgba(255,255,255,0.14);
+  width:100%; max-width:383px; aspect-ratio:383.04 / 587.52;
+  border-radius:36px;        /* NOT cqw: an element can't query itself */
+  overflow:hidden; position:relative;
   container-type:inline-size;
-  background:linear-gradient(180deg, #0B0D12 0%, #10141C 46%, #1A1A22 100%);
 }
-/* Type block. Absolute so the plate below can run to the card's bottom edge. */
+/* Gradient sizes are percentages of the card box, not cqw: html2canvas reads
+   the computed background-image, and container units can survive unresolved
+   into it — percentages always rasterise correctly.
+   ellipse radii: 446.05 / 467.39 wide, 409.58 tall, centred at 50% 79%. */
+.share-card-outer[data-theme="warm"] {
+  background:radial-gradient(ellipse 116.45% 69.71% at 50% 79%,
+    #BF7353 11.06%, #7F6D68 25.48%, #5F6972 32.69%, #3F667C 39.90%,
+    #2F4D5D 54.93%, #1F333E 69.95%, #101A1F 84.98%, #080D10 92.49%,
+    #040608 96.24%, #000000 100%);
+}
+.share-card-outer[data-theme="cool"] {
+  background:radial-gradient(ellipse 122.02% 69.71% at 50% 79%,
+    #5CA1C8 11.06%, #5F8F88 25.48%, #608668 32.69%, #627D49 39.90%,
+    #445733 56.01%, #27321D 72.12%, #14190F 86.06%, #0A0C07 93.03%,
+    #000000 100%);
+}
+
+/* Type block, absolutely placed so the plate can own the card's lower half */
 .share-card-inner {
   position:absolute; inset:0; z-index:1;
-  display:flex; flex-direction:column;
-  padding:6.8cqw 8.1cqw 0;   /* 26px / 31px of 383 */
+  padding:6.77cqw 10.34cqw 0;   /* 25.92 / 39.6 of 383.04 */
 }
 .share-card-eyebrow {
   font-family:var(--font-display); font-weight:700; color:#fff;
-  font-size:3.1cqw; letter-spacing:0.30em; text-indent:0.30em;
-  text-transform:uppercase; text-align:center; flex-shrink:0;
+  font-size:3.76cqw;            /* 14.4 */
+  letter-spacing:0.30em; text-indent:0.30em;  /* 4.32 @ 14.4 */
+  text-transform:uppercase; text-align:center;
 }
-.share-card-body { margin-top:11cqw; flex-shrink:0; text-align:left; }
+.share-card-body { margin-top:21.6cqw; text-align:left; }  /* to 126.72 from card top */
 .share-card-pre {
   font-family:var(--font-display); font-style:italic; font-weight:400;
-  font-size:5.2cqw; line-height:1.2; color:#fff;
+  font-size:6.58cqw; line-height:1.2; color:#fff;           /* 25.2 */
 }
 .share-card-name {
   font-family:var(--font-display); font-weight:700; color:#fff;
-  font-size:6.0cqw; line-height:1.28; margin-top:1.5cqw;
+  font-size:7.52cqw; line-height:1.2;                       /* 28.8 */
 }
 
-/* Figma: the plate (321x240) is inset by the card padding and its bottom edge
-   is the CARD's bottom edge — the footer band then sits on top of its lower
-   third, rather than below it. */
+/* Plate: 321.12 x 240.48, inset 30.96 each side, bottom flush with the card.
+   `object-fit:fill` because the PNG's aspect already matches the box — any
+   cover-crop would clip the vehicle. */
 .share-card-plate {
-  position:absolute; left:8.1cqw; right:8.1cqw; bottom:0; z-index:0;
-  height:40.9%;              /* 240.48 of 587.52 */
-  overflow:hidden;
+  position:absolute; left:8.08cqw; right:8.08cqw; bottom:0; z-index:0;
+  height:40.93%;                 /* 240.48 of 587.52 */
+  border-radius:9.4cqw; overflow:hidden;
 }
-/* Bottom-aligned: the source's dead-black lower quarter then falls entirely
-   behind the footer band, putting the glow and the vehicle in the visible strip
-   above it. */
-.share-card-plate img { width:100%; height:100%; object-fit:cover; object-position:50% 100%; display:block; }
+.share-card-plate-img { width:100%; height:100%; object-fit:fill; display:block; }
+/* Figma 41:333 wraps the cool plate in rotate(180) scaleY(-1) — a horizontal
+   mirror, so the bikes sit on the leading side. The warm card (41:334) has no
+   such transform. */
+.share-card-outer[data-theme="cool"] .share-card-plate-img { transform:scaleX(-1); }
+/* Vehicle lockup, 196x8 at 11.5% down the plate */
 .share-card-vehicle {
-  position:absolute; top:11.5%; left:0; right:0; z-index:1;
-  font-family:var(--font-display); font-weight:400;
-  font-size:3.4cqw; letter-spacing:0.46em; text-indent:0.46em;
-  text-transform:uppercase; text-align:center;
-  /* Translucent white rather than the Figma asset's near-black fill: the plate
-     art behind it is dark here, so a dark lockup would disappear. */
-  color:rgba(255,255,255,0.34);
+  position:absolute; top:11.5%; left:50%; transform:translateX(-50%); z-index:1;
+  width:51.17cqw; height:auto; display:block;
 }
 .share-card-footer {
   position:absolute; left:0; right:0; bottom:0; z-index:2;
-  height:13.1%;                                  /* 77.04 of 587.52 */
-  background:#0A0C11;
+  height:13.11%;                 /* 77.04 of 587.52 */
+  background:#000000;
+  border-radius:0 0 9.02cqw 9.02cqw;   /* 34.56 of 383.04 */
   display:flex; align-items:center; justify-content:space-between;
-  padding:0 5.4cqw;
+  padding:0 5.45cqw;             /* 20.88 */
 }
 .share-card-hashtags {
   font-family:var(--font-display); font-weight:400; color:#fff;
-  font-size:2.4cqw; letter-spacing:0.14em; white-space:nowrap;
+  font-size:2.82cqw;             /* 10.8 */
+  letter-spacing:0.23em;         /* 2.484 @ 10.8 */
+  white-space:nowrap;
 }
-.share-card-oval { width:15cqw; height:auto; display:block; opacity:0.95; }
+.share-card-oval { width:15.04cqw; height:auto; display:block; }  /* 57.6 */
 
 .share-actions {
-  display:flex; flex-direction:column; gap:clamp(10px, 1.6vw, 16px);
-  padding:0 20px clamp(14px, 2vw, 20px);
+  display:flex; flex-direction:column; gap:clamp(10px, 1.6cqw, 16px);
+  padding:0 20px clamp(14px, 2cqw, 20px);
   width:100%; max-width:610px; margin:0 auto;
 }
 .share-action-btn {
   width:100%; min-height:44px; border-radius:100px; cursor:pointer;
   font-family:var(--font-display); font-weight:400;
-  font-size:clamp(12px, 1.3vw, 15px);
+  font-size:clamp(12px, 1.3cqw, 15px);
   letter-spacing:var(--gd-track); text-indent:var(--gd-track);
   text-transform:uppercase; text-align:center;
   transition:all 0.18s ease-out;
@@ -591,8 +631,8 @@ button { font-family: inherit; -webkit-tap-highlight-color: transparent; }
 .share-discover {
   width:100%; background:none; border:none; cursor:pointer;
   font-family:var(--font-display); font-style:italic;
-  font-size:clamp(13px, 1.4vw, 16px); color:var(--gd-grey);
-  padding:6px 0 clamp(20px, 3vw, 28px); transition:color 0.15s;
+  font-size:clamp(13px, 1.4cqw, 16px); color:var(--gd-grey);
+  padding:6px 0 clamp(20px, 3cqw, 28px); transition:color 0.15s;
 }
 .share-discover:hover { color:#fff; }
 

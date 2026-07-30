@@ -23,10 +23,11 @@ export const fordBrand = {
   logoOvalSrc:  '/brand/ford-oval-PLACEHOLDER.svg', // replace with licensed asset
   wordmarkText: 'FORD',                             // placeholder — replace with licensed wordmark asset
 
-  // The Figma social card (41:335) shows a vehicle lockup on the share graphic
-  // (node 46:360). Treated as a PLACEHOLDER: confirm the public-facing name and
-  // swap for the licensed lockup art before any external use. "Gotham" is the
-  // internal codename and must never appear here.
+  // The vehicle lockup on the share card is now the exported Figma art at
+  // public/brand/fathom-wordmark.svg (node 46:360). This string is the text
+  // equivalent, kept for alt text / captions. Confirm the public-facing name is
+  // cleared before any external use. "Gotham" is the internal codename and must
+  // never appear here.
   vehicleWordmarkText: 'FATHOM',
 
   toneNotes:

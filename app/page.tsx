@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useChat } from '@/app/frontend/hooks/useChat';
 import type { GothamRevealPayload, ConfigId } from '@/app/frontend/hooks/useChat';
-import { fordBrand, CONFIG_LABELS } from '@/app/theme/ford-brand';
+import { CONFIG_LABELS } from '@/app/theme/ford-brand';
 
 // ─── TYPES ───────────────────────────────────────────────────────────────────
 type Screen = 'landing' | 'intro' | 'chat' | 'reveal' | 'capture' | 'share';
@@ -264,8 +264,40 @@ function Waveform() {
 
 // ─── SHARED FIGMA ASSETS ─────────────────────────────────────────────────────
 // Exported from "Ford Gotham Discovery". See README → "Design assets".
-const UI_GLOW = '/ui/glow-orb.svg';    // 46:372 — loading-screen radial glow
-const UI_BACK = '/ui/back-circle.svg'; // 41:681 — 61px circle + steel arrow
+const UI_GLOW  = '/ui/glow-orb.svg';         // 46:372 — loading-screen radial glow
+const UI_BACK  = '/ui/back-circle.svg';      // 41:681 — 61px circle + steel arrow
+const UI_OVAL  = '/brand/ford-oval.svg';     // 41:320 — Ford oval, dark variant
+const UI_FATHOM = '/brand/fathom-wordmark.svg'; // 46:360 — vehicle lockup
+
+// ─── PERSONALITY THEMES ──────────────────────────────────────────────────────
+// Figma ships two dressings of the reveal + social card, and they are a matched
+// pair: Personality 1 (Field Workshop) is a WARM sunrise behind a truck carrying
+// a board, Personality 2 (Overland Trailblazer) is a COOL blue-green dawn behind
+// a wagon carrying bikes. Each config picks whichever reads truer to the life
+// the user just described, and the reveal and share card always agree.
+type PlateTheme = 'warm' | 'cool';
+
+const CONFIG_THEME: Record<ConfigId, PlateTheme> = {
+  field_workshop:       'warm', // hands-on maker, garage-to-jobsite
+  mobile_atelier:       'warm', // creative practice, city light
+  momentum_commuter:    'warm', // early starts, city-to-city
+  overland_trailblazer: 'cool', // trails, crags, high country
+  basecamp_explorer:    'cool', // shared expeditions, open country
+};
+
+// Reveal plates are 604x388 loops; the social-card plates are transparent PNGs
+// that let the card's own gradient read through as sky and glow.
+const REVEAL_PLATE: Record<PlateTheme, string> = {
+  warm: '/reveal/truck-sunrise.gif',
+  cool: '/reveal/reveal-cool.gif',
+};
+const CARD_PLATE: Record<PlateTheme, string> = {
+  warm: '/reveal/card-warm.png',
+  cool: '/reveal/plate-cool.png',
+};
+
+const themeFor = (config: ConfigId | null): PlateTheme =>
+  config ? CONFIG_THEME[config] : 'warm';
 
 function BackButton({ onClick }: { onClick: () => void }) {
   return (
@@ -377,9 +409,12 @@ function ChatScreen({ onComplete, onBack }: {
     if (started.current) return;
     started.current = true;
     prewarmTTS();
-    // Warm the reveal plate while the user is still talking — it's a heavy loop.
-    const preload = new Image();
-    preload.src = REVEAL_ART;
+    // Warm both reveal plates while the user is still talking — they're heavy
+    // loops and we don't know which theme the reveal will land on yet.
+    for (const src of Object.values(REVEAL_PLATE)) {
+      const preload = new Image();
+      preload.src = src;
+    }
     startConversation();
     const SRA = (window as typeof window & { SpeechRecognition?: unknown; webkitSpeechRecognition?: unknown }).SpeechRecognition
              || (window as typeof window & { webkitSpeechRecognition?: unknown }).webkitSpeechRecognition;
@@ -642,15 +677,12 @@ function ChatScreen({ onComplete, onBack }: {
 // Design source: Figma "Ford Gotham Discovery" → Frame 1 (node 24:264).
 // Black canvas; tracked-caps config title overlapping the sunrise plate; bold
 // identity headline; narrative; steel CONTINUE pill; ghost START OVER.
-// The plate is the animated sunrise exported from the Figma frame — 105 frames
-// at 30ms, set to play once and hold on the lit frame (see README).
-const REVEAL_ART = '/reveal/truck-sunrise.gif';
-
 function RevealScreen({ reveal, onNext, onRestart }: {
   reveal: GothamRevealPayload; onNext: () => void; onRestart: () => void;
 }) {
   const fs = reveal.future_self;
   const config = safeConfig(fs.config_id);
+  const theme = themeFor(config);
   const spoken = useRef(false);
 
   // The card's staged fade-in is pure CSS (see .reveal-* animations); this only
@@ -675,8 +707,8 @@ function RevealScreen({ reveal, onNext, onRestart }: {
       <div className="reveal-inner">
         <div className="reveal-hero-stack">
           <h1 className="reveal-config-title">{configTitle}</h1>
-          <div className="reveal-hero-art">
-            <img src={REVEAL_ART} alt="" aria-hidden="true" />
+          <div className="reveal-hero-art" data-theme={theme}>
+            <img src={REVEAL_PLATE[theme]} alt="" aria-hidden="true" />
           </div>
         </div>
 
@@ -763,6 +795,7 @@ function ShareScreen({ reveal, onRestart, onBack }: {
   const fs = reveal.future_self;
   const config = safeConfig(fs.config_id);
   const configTitle = config ? CONFIG_LABELS[config] : 'Your next you';
+  const theme = themeFor(config);
   const cardRef = useRef<HTMLDivElement>(null);
   const [copied, setCopied] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -821,13 +854,11 @@ function ShareScreen({ reveal, onRestart, onBack }: {
       </div>
 
       <div className="share-card-area">
-        <div ref={cardRef} className="share-card-outer">
-          {/* Runs to the card's bottom edge; the footer band overlays it */}
+        <div ref={cardRef} className="share-card-outer" data-theme={theme}>
+          {/* Transparent plate over the card gradient; footer band overlays it */}
           <div className="share-card-plate">
-            <img src={REVEAL_ART} alt="" aria-hidden="true" />
-            {/* PLACEHOLDER vehicle wordmark — the Figma card shows a licensed
-                lockup here (node 46:360). Confirm the public name per RSF. */}
-            <div className="share-card-vehicle">{fordBrand.vehicleWordmarkText}</div>
+            <img src={CARD_PLATE[theme]} alt="" aria-hidden="true" className="share-card-plate-img" />
+            <img src={UI_FATHOM} alt="" aria-hidden="true" className="share-card-vehicle" />
           </div>
 
           <div className="share-card-inner">
@@ -840,14 +871,7 @@ function ShareScreen({ reveal, onRestart, onBack }: {
 
           <div className="share-card-footer">
             <span className="share-card-hashtags">#DiscoverYourNextYou #Ford</span>
-            {/* PLACEHOLDER Ford oval — swap for the licensed asset */}
-            <img
-              src={fordBrand.logoOvalSrc}
-              alt=""
-              className="share-card-oval"
-              crossOrigin="anonymous"
-              onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }}
-            />
+            <img src={UI_OVAL} alt="Ford" className="share-card-oval" />
           </div>
         </div>
       </div>

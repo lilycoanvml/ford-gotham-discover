@@ -26,9 +26,9 @@ Ford RSF / Brand Design System. They live in one place: `app/theme/ford-brand.ts
 | Warm signal `#F2B705` | same | Confirm value; use sparingly |
 | Typeface **"Ford Antenna"** | `app/layout.tsx` (loads Archivo as a stand-in) | Load the **licensed** Antenna webfont |
 | Typeface **"American Grotesk"** | first in `--font-display` (`globals.css`) — the face used in the Figma reveal frame, not bundled | Load it (or confirm Antenna is the intended face) |
-| Ford Oval | `public/brand/ford-oval-PLACEHOLDER.svg` | Replace with the **licensed** oval asset |
+| Ford Oval | `public/brand/ford-oval.svg`, recomposed from the Figma component (node `41:320`) | Validate against RSF; `ford-oval-PLACEHOLDER.svg` is no longer used |
 | Ford wordmark | `ford-brand.ts` (`wordmarkText: 'FORD'`) | Replace with the licensed wordmark asset |
-| Vehicle wordmark **"FATHOM"** | `ford-brand.ts` (`vehicleWordmarkText`) — read off the Figma social card (node `46:360`) | Confirm the public-facing name and swap for the licensed lockup art |
+| Vehicle wordmark **"FATHOM"** | `public/brand/fathom-wordmark.svg`, exported from the Figma social card (node `46:360`) | Confirm the public-facing name is cleared for external use |
 | Favicon | `app/icon.svg` | Replace oval stand-in with licensed art |
 
 Do not treat any brand value as final, and do not imply official endorsement.
@@ -47,6 +47,7 @@ Every screen is implemented from Figma **"Ford Gotham Discovery"**
 | `intro` | Loading Screen | `41:550` |
 | `chat` | Chat | `41:513` |
 | `reveal` | Personality 1 / Personality 2 | `24:264` / `33:282` |
+| `share` card art | Social Card warm / cool | `41:334` / `41:333` |
 | `capture` | Sign Up | `41:398` |
 | `share` | Social Card 1 | `41:335` |
 
@@ -57,16 +58,41 @@ worth knowing:
 
 - The landing chip row (`who / will you / be?`) is sized in `em` off its own
   type scale, so all three stay on one line at any width instead of wrapping.
+- **`#era-app` is a query container and all screen sizing is in `cqw`, not `vw`.**
+  This matters: in mobile-frame demo mode the app is a 390px box inside a wide
+  window, and `vw` sized type off the *window* — the landing chips rendered at
+  their full 90px desktop size and blew straight out of the frame.
 - The social card sizes its contents in `cqw` against a container query on the
   card itself. `.share-card-inner` exists because an element cannot use its own
-  container units for its own padding — without the split, percentage padding
+  container units for its own layout — without the split, percentage padding
   resolves against the surrounding flex row (~1400px on desktop), not the 383px
-  card.
+  card. For the same reason the card's own `border-radius` is a fixed `36px`:
+  `cqw` there silently falls back to the small-viewport size.
+- The landing headline and chips share one `--gd-hero-size`. Both are 90px in
+  Figma and read as one sentence, so the scale is derived from the **chip row**
+  (the binding constraint at ~9.1em wide), leaving ~20% of the column as margin.
 
 **Where the two reveal frames disagree:** Personality 1 overlaps its title box
 into the plate by -32px; Personality 2 leaves a 20px gap. The gap is
 authoritative here — the overlap only works for a single-line title, and most
 config names wrap to two lines at 45px with 0.30em tracking.
+
+### Personality themes
+
+Figma ships two dressings of the reveal + social card, and they are a matched
+pair. Each config picks whichever reads truer to the life the user described,
+and the reveal and share card always agree:
+
+| Theme | Look | Configs |
+|---|---|---|
+| `warm` | orange sunrise, truck carrying a board | Field Workshop, Mobile Atelier, Momentum Commuter |
+| `cool` | blue-green dawn, wagon carrying bikes | Overland Trailblazer, Basecamp Explorer |
+
+The mapping is `CONFIG_THEME` in `app/page.tsx`; the card gradient is selected by
+`[data-theme]` in CSS. The card's background gradient *is* the artwork — the
+plate PNG on top is transparent above and below the vehicle so the gradient
+reads through it as sky and glow, which is why the plate must be placed at its
+natural aspect and never cover-cropped.
 
 ### Palette
 
@@ -187,23 +213,24 @@ Open [http://localhost:3000](http://localhost:3000)
 
 | File | Figma node | Notes |
 |---|---|---|
-| `public/reveal/truck-sunrise.gif` | `25:268` | The sunrise plate — 105 frames at 30ms (~3.1s). Used on the reveal and the social card. |
+| `public/reveal/truck-sunrise.gif` | `25:268` | Warm reveal plate — 105 frames at 30ms (~3.1s), 1200x1200 so it needs the Figma crop. |
+| `public/reveal/reveal-cool.gif` | `33:287` | Cool reveal plate — 105 frames, exported at 1196x764, i.e. the 604/388 box's own aspect, so no crop. |
+| `public/reveal/card-warm.png` | `37:302` | Warm card plate — **transparent** PNG over the card gradient. |
+| `public/reveal/plate-cool.png` | `37:305` | Cool card plate — transparent; mirrored on the card per Figma's transform. |
+| `public/brand/ford-oval.svg` | `41:320` | Ford oval, dark variant. Recomposed from the Figma component's 4 layers (body + ring + 2 script glyphs). |
+| `public/brand/fathom-wordmark.svg` | `46:360` | Vehicle lockup, 196x8. |
 | `public/ui/glow-orb.svg` | `46:372` | Loading-screen radial glow, `#63A1CE` → transparent. |
 | `public/ui/back-circle.svg` | `41:681` | 61px `#14141D` circle + steel arrow. |
 
-The GIF's Netscape looping extension has been **stripped** so browsers play it
-once and hold the lit final frame — left looping, the card flashes back to black
-every ~3s. It is 4.2MB, so `ChatScreen` preloads it while the user is still
-answering. Re-exporting from Figma means re-stripping that extension.
+Both reveal GIFs have their Netscape looping extension **stripped** so browsers
+play them once and hold the lit final frame — left looping, the card flashes back
+to black every ~3s. They are ~4.2MB each, so `ChatScreen` preloads both while the
+user is still answering (the theme isn't known until the reveal lands).
+Re-exporting from Figma means re-stripping that extension.
 
-**Known asset gaps** (the Figma MCP call limit was reached mid-session):
-
-- Each personality has its own plate in Figma — Personality 2 (`33:287`) is a
-  blue/teal glow with a different vehicle. All five configs currently share the
-  Field Workshop sunrise. Fetching the other four is a `get_design_context` call
-  per frame plus a per-config lookup beside `REVEAL_ART`.
-- The social card's vehicle lockup (`46:360`) and dark Ford oval (`41:327`) are
-  rendered as text/placeholder rather than the exported art.
+The Ford oval and FATHOM lockup now come from the Ford design-system components in
+the project's own Figma file rather than from stand-in art. Still confirm both
+against the official RSF before any external use.
 
 > Note: the `agents/`, `app/orchestration/`, `app/backend/`, and `tools/` folders are
 > **not imported by the running app** — they are decorative scaffolding from the

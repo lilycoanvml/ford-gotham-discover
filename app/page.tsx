@@ -131,7 +131,7 @@ function speakFallback(text: string) {
   if (typeof window === 'undefined' || !('speechSynthesis' in window)) return;
   window.speechSynthesis.cancel();
   const utterance = new SpeechSynthesisUtterance(text);
-  // Upbeat, energetic male delivery to match the Cloud TTS "Puck" voice.
+  // Warm, grounded male delivery to match the Cloud TTS "Charon" voice.
   utterance.rate = 1.05; utterance.pitch = 0.92; utterance.volume = 1;
   const voices = voiceCache.length > 0 ? voiceCache : window.speechSynthesis.getVoices();
   const preferred =
@@ -308,7 +308,7 @@ function BackButton({ onClick }: { onClick: () => void }) {
 }
 
 // ─── INTRO / LOADING SCREEN (Figma 41:550) ───────────────────────────────────
-const INTRO_SPEECH = "Take a breath. This is a moment just for you — no products, no pitch. Tell me a little about who you are and who you're becoming, and I'll show you the vehicle built to take you there.";
+const INTRO_SPEECH = "Hi, I'm Miles. Take a breath — this is a moment just for you. No products, no pitch. Let's talk a little about what makes you you, because I want to see who you're becoming. Who knows — this chat could change everything about the road ahead.";
 
 function IntroScreen({ onDone }: { onDone: () => void }) {
   const [exiting, setExiting] = useState(false);
@@ -333,6 +333,7 @@ function IntroScreen({ onDone }: { onDone: () => void }) {
 
       <div className="intro-text-area">
         <div className="intro-greeting">Discover your <em>next you</em></div>
+        <div className="intro-subhead">This changes everything</div>
         <div className="intro-tagline">A guided moment of self-discovery</div>
       </div>
     </div>

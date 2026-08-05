@@ -171,6 +171,14 @@ button { font-family: inherit; -webkit-tap-highlight-color: transparent; }
   animation: fadeUp 0.8s ease-out both 0.25s;
 }
 .intro-greeting em { font-style:italic; color:var(--gd-steel); }
+/* Sits between the greeting and the tagline, on the same fadeUp stagger. */
+.intro-subhead {
+  font-family:var(--font-display); font-weight:400; font-style:italic;
+  font-size:clamp(15px, 3.2cqw, 32px); line-height:1.1;
+  color:var(--gd-steel); text-wrap:balance;
+  margin-top:clamp(6px, 1.2cqw, 12px);
+  animation: fadeUp 0.8s ease-out both 0.42s;
+}
 .intro-tagline {
   font-family:var(--font-display); font-weight:700;
   font-size:clamp(9px, 1.5cqw, 14.4px);
@@ -805,7 +813,7 @@ body:has(#era-app.mobile-frame) {
 
 /* ── Reduced motion: calm the staged beats ── */
 @media (prefers-reduced-motion: reduce) {
-  .intro-greeting, .intro-tagline,
+  .intro-greeting, .intro-subhead, .intro-tagline,
   .landing-headline, .landing-chips, .landing-sub, .landing-cta-area,
   .chat-avatar { animation:none !important; }
 }

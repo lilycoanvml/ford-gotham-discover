@@ -28,7 +28,7 @@ steps:
       - --memory=512Mi
       - --cpu=1
       - --set-secrets=GEMINI_API_KEY=gemini-api-key:latest
-      - --set-env-vars=GEMINI_MODEL=gemini-3.6-flash,GEMINI_TTS_MODEL=gemini-3.1-flash-live-preview,GEMINI_TTS_VOICE=Puck
+      - --set-env-vars=GEMINI_MODEL=gemini-3.6-flash,GEMINI_TTS_MODEL=gemini-3.1-flash-live-preview,GEMINI_TTS_VOICE=Charon
 
 substitutions:
   _SERVICE_NAME: ford-gotham-discover

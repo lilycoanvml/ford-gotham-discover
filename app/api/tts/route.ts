@@ -23,7 +23,7 @@ import WebSocket from 'ws';
  */
 
 const LIVE_MODEL   = process.env.GEMINI_TTS_MODEL || 'gemini-3.1-flash-live-preview';
-const LIVE_VOICE   = process.env.GEMINI_TTS_VOICE || 'Puck'; // upbeat male
+const LIVE_VOICE   = process.env.GEMINI_TTS_VOICE || 'Charon'; // deeper male
 const LIVE_WS_URL  = 'wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent';
 const FIRST_CHUNK_TIMEOUT_MS = 9000; // give up and fall back to Cloud TTS
 
@@ -192,9 +192,9 @@ async function speakWithCloudTTS(spoken: string) {
     input: { text: spoken },
     voice: {
       languageCode: 'en-US',
-      // Chirp 3 HD voices render fast and sound natural. Puck = upbeat male.
-      // Other male options: 'Charon' (deeper), 'Fenrir'; 'Aoede'/'Kore' are female.
-      name: 'en-US-Chirp3-HD-Puck',
+      // Chirp 3 HD voices render fast and sound natural. Charon = deeper male.
+      // Other male options: 'Puck' (upbeat), 'Fenrir'; 'Aoede'/'Kore' are female.
+      name: 'en-US-Chirp3-HD-Charon',
     },
     audioConfig: {
       audioEncoding: 'OGG_OPUS',

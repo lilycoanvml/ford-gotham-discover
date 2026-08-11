@@ -301,15 +301,17 @@ button { font-family: inherit; -webkit-tap-highlight-color: transparent; }
   color:var(--gd-grey-2); margin-top:3px;
 }
 
-/* The discovery screen carries no transcript — the orb is the whole stage. */
+/* The discovery screen carries no transcript — the orb is the whole stage.
+   The canvas fills this box absolutely, so the blob has room to grow and its
+   blur to fall off without clipping. */
 .orb-stage {
   flex:1; position:relative; z-index:1; min-height:0;
   display:flex; flex-direction:column;
-  align-items:center; justify-content:center;
-  gap:clamp(18px, 3cqw, 32px);
+  align-items:center; justify-content:flex-end;
   padding:clamp(16px, 3cqw, 40px) clamp(16px, 3.3cqw, 48px);
 }
 .orb-error {
+  position:relative; /* above the canvas */
   font-family:var(--font-display); font-style:italic;
   font-size:clamp(12px, 1.05cqw, 15px); color:var(--gd-grey-2);
   text-align:center; max-width:26em;
@@ -754,79 +756,22 @@ button { font-family: inherit; -webkit-tap-highlight-color: transparent; }
 
 /* ═══════════════════════════════════════════════════════════
    FATHOM ORB — the discovery screen's only subject.
-   `--level` is written every frame from the coach's live waveform
-   (see AudioOrb in page.tsx); everything below is driven off it.
-   Colour morphing is a cross-fade of three stacked layers rather than a
-   gradient transition, which browsers won't interpolate.
+   The shape, gradient rings and lens flare are drawn to canvas by
+   AudioOrb.tsx; everything here is the soft-focus pass over it.
    ═══════════════════════════════════════════════════════════ */
 .fathom-orb {
-  --level:0;
-  position:relative; flex-shrink:0;
-  width:clamp(170px, 33cqw, 330px);
-  aspect-ratio:1; /* height follows width at every breakpoint */
+  position:absolute; inset:0;
+  pointer-events:none;
+  /* The blur is what turns the ringed polygon into light. Scaled down on
+     small screens so the orb doesn't dissolve at phone sizes. */
+  filter:blur(clamp(9px, 1.4cqw, 15px));
+  will-change:filter, transform;
 }
-.fathom-orb-halo,
-.fathom-orb-core,
-.fathom-orb-ring { position:absolute; border-radius:50%; }
-
-/* Bloom — grows and brightens with loudness */
-.fathom-orb-halo {
-  inset:-22%;
-  transform:scale(calc(1 + var(--level) * 0.30));
-  opacity:calc(0.26 + var(--level) * 0.52);
-  filter:blur(38px);
-  transition:transform 60ms linear, opacity 60ms linear;
-}
-
-/* Body — the slow shape morph keeps it liquid rather than a hard sphere */
-.fathom-orb-core {
-  inset:0; overflow:hidden;
-  transform:scale(calc(1 + var(--level) * 0.15));
-  transition:transform 60ms linear;
-  animation:orbWobble 9s ease-in-out infinite;
-}
-
-/* The three palette colours, stacked; only the active one is opaque. Scoped to
-   .orb-layer so it doesn't also capture the shade/gloss spans. */
-.orb-layer {
-  position:absolute; inset:0; display:block;
-  transition:opacity 1000ms ease;
-}
-.fathom-orb-halo .orb-c0 { background:radial-gradient(circle, var(--gd-terra), transparent 64%); }
-.fathom-orb-halo .orb-c1 { background:radial-gradient(circle, var(--gd-sage),  transparent 64%); }
-.fathom-orb-halo .orb-c2 { background:radial-gradient(circle, var(--gd-steel), transparent 64%); }
-.fathom-orb-core .orb-c0 { background:var(--gd-terra); }
-.fathom-orb-core .orb-c1 { background:var(--gd-sage); }
-.fathom-orb-core .orb-c2 { background:var(--gd-steel); }
-
-/* Depth and highlight sit above the colour layers, so they read on all three
-   without needing a per-colour gradient. */
-.fathom-orb-shade {
-  position:absolute; inset:0; display:block;
-  background:linear-gradient(212.68deg,
-    rgba(255,255,255,0.30) 0%, rgba(255,255,255,0) 42%,
-    rgba(10,10,15,0.30) 78%, rgba(10,10,15,0.55) 100%);
-}
-.fathom-orb-gloss {
-  position:absolute; display:block;
-  top:9%; left:14%; width:44%; height:34%; border-radius:50%;
-  background:radial-gradient(circle at 40% 40%, rgba(255,255,255,0.55), transparent 68%);
-  filter:blur(6px);
-  opacity:calc(0.5 + var(--level) * 0.4);
-}
-
-/* Thin shell that only shows on peaks — the visible "beat" of the voice */
-.fathom-orb-ring {
-  inset:-6%; border:1px solid rgba(255,255,255,0.85);
-  opacity:calc(var(--level) * 0.30);
-  transform:scale(calc(1 + var(--level) * 0.10));
-  transition:transform 60ms linear, opacity 60ms linear;
-}
-
-@keyframes orbWobble {
-  0%,100% { border-radius:50% 50% 50% 50% / 50% 50% 50% 50%; }
-  33%     { border-radius:54% 46% 49% 51% / 47% 53% 47% 53%; }
-  66%     { border-radius:46% 54% 52% 48% / 53% 47% 53% 47%; }
+.fathom-orb canvas {
+  width:100%; height:100%; display:block;
+  /* Screen keeps the gradient's dark outer stops from muddying the black
+     canvas — only the light in the blob accumulates. */
+  mix-blend-mode:screen;
 }
 
 /* ═══════════════════════════════════════════════════════════
@@ -896,7 +841,7 @@ body:has(#era-app.mobile-frame) {
 @media (prefers-reduced-motion: reduce) {
   .intro-greeting, .intro-subhead, .intro-tagline,
   .landing-chips, .landing-sub, .landing-cta-area,
-  .chat-avatar, .fathom-orb-core { animation:none !important; }
-  /* The orb still tracks the voice, but without the scale/shape motion. */
-  .fathom-orb-core, .fathom-orb-halo, .fathom-orb-ring { transform:none !important; }
+  .chat-avatar { animation:none !important; }
+  /* The orb itself stops in AudioOrb.tsx — it paints one static frame rather
+     than running the loop, so there is no CSS animation here to cancel. */
 }

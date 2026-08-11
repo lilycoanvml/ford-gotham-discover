@@ -4,6 +4,8 @@ import { useEffect, useRef, useState } from 'react';
 import { useChat } from '@/app/frontend/hooks/useChat';
 import type { GothamRevealPayload, ConfigId } from '@/app/frontend/hooks/useChat';
 import { CONFIG_LABELS } from '@/app/theme/ford-brand';
+import AudioOrb from '@/app/frontend/components/AudioOrb';
+import type { OrbMode } from '@/app/frontend/components/AudioOrb';
 
 // ─── TYPES ───────────────────────────────────────────────────────────────────
 type Screen = 'landing' | 'intro' | 'chat' | 'reveal' | 'capture' | 'share';
@@ -294,62 +296,16 @@ function CoachOrb({ size, state = 'idle' }: { size: number; state?: 'idle' | 'li
   );
 }
 
-// ─── FATHOM ORB ──────────────────────────────────────────────────────────────
-// The discovery screen has no chat transcript — this orb *is* the interface.
-// It breathes with the coach's live waveform and morphs through the three
-// palette colours, one per question, in the order of the landing chips.
-type OrbMode = 'idle' | 'listening' | 'thinking' | 'speaking';
-
-// Matches .fathom-orb-core span order in globals.css — terra → sage → steel.
-const ORB_COLOR_COUNT = 3;
-
-function AudioOrb({ colorIndex, mode }: { colorIndex: number; mode: OrbMode }) {
-  const ref = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    let raf = 0;
-    let smoothed = 0;
-    const tick = () => {
-      raf = requestAnimationFrame(tick);
-      const el = ref.current;
-      if (!el) return;
-
-      const t = performance.now();
-      let target: number;
-      if (mode === 'speaking')       target = audioLevel();
-      else if (mode === 'listening') target = 0.22 + syntheticEnvelope() * 0.42;
-      else if (mode === 'thinking')  target = 0.14 + Math.abs(Math.sin(t / 420)) * 0.14;
-      else                           target = 0.08 + Math.abs(Math.sin(t / 1100)) * 0.06;
-
-      // Attack faster than release — a slow rise reads as lag, a slow fall
-      // reads as resonance, which is what makes it feel tied to the voice.
-      smoothed += (target - smoothed) * (target > smoothed ? 0.38 : 0.11);
-      el.style.setProperty('--level', smoothed.toFixed(3));
-    };
-    raf = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(raf);
-  }, [mode]);
-
-  const active = ((colorIndex % ORB_COLOR_COUNT) + ORB_COLOR_COUNT) % ORB_COLOR_COUNT;
-  const layers = Array.from({ length: ORB_COLOR_COUNT });
-
-  return (
-    <div ref={ref} className={`fathom-orb ${mode}`} aria-hidden="true">
-      <div className="fathom-orb-halo">
-        {layers.map((_, i) => (
-          <span key={i} className={`orb-layer orb-c${i}`} style={{ opacity: i === active ? 1 : 0 }} />
-        ))}
-      </div>
-      <div className="fathom-orb-core">
-        {layers.map((_, i) => (
-          <span key={i} className={`orb-layer orb-c${i}`} style={{ opacity: i === active ? 1 : 0 }} />
-        ))}
-        <span className="fathom-orb-shade" />
-        <span className="fathom-orb-gloss" />
-      </div>
-      <div className="fathom-orb-ring" />
-    </div>
-  );
+// The orb reads whichever level its current mode implies: the coach's real
+// waveform while speaking, a synthetic envelope while the user talks (speech
+// recognition owns the mic, so there's no second stream to analyse), and a
+// slow drift otherwise.
+function levelForMode(mode: OrbMode): number {
+  const t = performance.now();
+  if (mode === 'speaking')  return audioLevel();
+  if (mode === 'listening') return 0.22 + syntheticEnvelope() * 0.42;
+  if (mode === 'thinking')  return 0.14 + Math.abs(Math.sin(t / 420)) * 0.14;
+  return 0.08 + Math.abs(Math.sin(t / 1100)) * 0.06;
 }
 
 // ─── WAVEFORM ────────────────────────────────────────────────────────────────
@@ -628,6 +584,9 @@ function ChatScreen({ onComplete, onBack }: {
     : isListening ? 'listening'
     : isSpeaking  ? 'speaking'
     : 'idle';
+  // Re-created each render, which is what keeps it reading the current mode —
+  // the orb re-reads this reference every frame rather than closing over it.
+  const getOrbLevel = () => levelForMode(orbMode);
 
   // Nothing is drawn as text on this screen, so the coach's spoken line is
   // mirrored to assistive tech instead.
@@ -660,7 +619,7 @@ function ChatScreen({ onComplete, onBack }: {
       </div>
 
       <div className="orb-stage">
-        <AudioOrb colorIndex={orbColor} mode={orbMode} />
+        <AudioOrb colorIndex={orbColor} mode={orbMode} getLevel={getOrbLevel} />
 
         {/* Screen readers get the question; the screen itself stays wordless. */}
         <div className="gd-sr-only" aria-live="polite" aria-atomic="true">{spokenLine}</div>

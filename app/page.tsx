@@ -6,6 +6,7 @@ import type { GothamRevealPayload, ConfigId } from '@/app/frontend/hooks/useChat
 import { CONFIG_LABELS } from '@/app/theme/ford-brand';
 import AudioOrb from '@/app/frontend/components/AudioOrb';
 import type { OrbMode } from '@/app/frontend/components/AudioOrb';
+import { QUESTIONS } from '@/app/lib/script';
 
 // ─── TYPES ───────────────────────────────────────────────────────────────────
 type Screen = 'landing' | 'chat' | 'reveal' | 'capture' | 'share';
@@ -111,7 +112,9 @@ function stopSpeech() {
 }
 
 // Play a streamed 16-bit little-endian PCM body, scheduling chunks as they land.
-async function playPcmStream(res: Response, token: number, onEnd?: () => void) {
+// Resolves when the last chunk finishes; firing the end-of-turn callbacks is
+// speakParts' job, since a turn can be several segments long.
+async function playPcmStream(res: Response, token: number) {
   primeAudio();
   const ctx = audioCtx;
   if (!ctx || !res.body) throw new Error('Web Audio unavailable');
@@ -161,9 +164,6 @@ async function playPcmStream(res: Response, token: number, onEnd?: () => void) {
   await new Promise<void>(resolve => {
     tail!.onended = () => { liveSources = liveSources.filter(s => s !== tail); resolve(); };
   });
-  if (token !== speechToken) return;
-  _onSpeakEnd?.();
-  if (onEnd) setTimeout(onEnd, 700);
 }
 
 // Web Speech API fallback (used when GCP TTS route is unavailable locally)
@@ -203,46 +203,135 @@ function sanitizeClosingMsg(msg: string): string {
   return msg.replace(/\[.*?\]/g, '').trim() || "Take a look at who you're becoming.";
 }
 
-// Primary: /api/tts. That route streams raw PCM from Gemini native audio, or
-// returns a whole Cloud TTS clip as JSON if the live path is unavailable — both
-// shapes are handled here. Last resort is the browser's own Web Speech API.
-async function speak(text: string, onEnd?: () => void) {
+/*
+ * Speech cache. The three questions never change, so their audio is fetched
+ * during the previous turn and played from memory — the expensive part of a
+ * turn (synthesising ~10s of speech) stops being on the critical path, and only
+ * the short reaction is generated live.
+ */
+type Clip = { samples: Float32Array<ArrayBuffer>; rate: number };
+const ttsCache = new Map<string, Clip>();
+const ttsInflight = new Map<string, Promise<void>>();
+
+/*
+ * How long the mic keeps listening after the user stops making sound before
+ * Miles takes his turn. Natural turn-taking gaps run ~200ms; this was 2500ms,
+ * which was the single largest slice of dead air in the loop.
+ */
+const SILENCE_MS = 1000;
+
+// How long after Miles stops before the mic reopens. Was 700ms + a 250ms
+// hand-off; conversational gaps are far shorter than that.
+const POST_SPEECH_MS = 250;
+
+function decodePcm(buf: ArrayBuffer): Float32Array<ArrayBuffer> {
+  const view = new DataView(buf);
+  const out = new Float32Array(new ArrayBuffer(Math.floor(buf.byteLength / 2) * 4));
+  for (let i = 0; i < out.length; i++) out[i] = view.getInt16(i * 2, true) / 32768;
+  return out;
+}
+
+async function fetchTTS(text: string): Promise<Response> {
+  return fetch('/api/tts', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ text }),
+  });
+}
+
+/** Synthesise ahead of time and hold it. Idempotent; failures are silent. */
+function prefetchSpeech(text?: string) {
+  if (typeof window === 'undefined') return;
+  if (!text || ttsCache.has(text) || ttsInflight.has(text)) return;
+  const job = (async () => {
+    const res = await fetchTTS(text);
+    if (!res.ok) throw new Error('prefetch failed');
+    // Only the streaming Gemini path is cacheable; the Cloud TTS fallback
+    // returns a whole clip that the live path already handles fine.
+    if (!res.headers.get('Content-Type')?.startsWith('audio/')) return;
+    const rate = Number(res.headers.get('X-Audio-Rate')) || 24000;
+    ttsCache.set(text, { samples: decodePcm(await res.arrayBuffer()), rate });
+  })().catch(() => { /* fall back to live synthesis at play time */ })
+    .finally(() => { ttsInflight.delete(text); });
+  ttsInflight.set(text, job);
+}
+
+/** Play an already-synthesised clip. Resolves when it finishes. */
+async function playClip(clip: Clip, token: number): Promise<void> {
+  primeAudio();
+  const ctx = audioCtx;
+  if (!ctx) throw new Error('Web Audio unavailable');
+  if (ctx.state === 'suspended') await ctx.resume();
+
+  const buffer = ctx.createBuffer(1, clip.samples.length, clip.rate);
+  buffer.copyToChannel(clip.samples, 0);
+  const src = ctx.createBufferSource();
+  src.buffer = buffer;
+  src.connect(analyser ?? ctx.destination);
+  src.start(ctx.currentTime + 0.02);
+  liveSources.push(src);
+
+  await new Promise<void>(resolve => {
+    src.onended = () => { liveSources = liveSources.filter(s => s !== src); resolve(); };
+  });
+  if (token !== speechToken) return;
+}
+
+/** Cloud TTS fallback shape: one complete clip through an <audio> element. */
+async function playJsonClip(res: Response, token: number): Promise<void> {
+  const { audio, mime } = await res.json();
+  if (token !== speechToken) return;
+  const el = new Audio(`data:${mime || 'audio/ogg'};base64,${audio}`);
+  currentAudio = el;
+  // Tap into the same analyser so the orb reacts on this path too.
+  primeAudio();
+  if (audioCtx && analyser) {
+    try {
+      if (audioCtx.state === 'suspended') await audioCtx.resume();
+      audioCtx.createMediaElementSource(el).connect(analyser);
+    } catch { /* untapped — the clip still plays, the orb just breathes */ }
+  }
+  const done = new Promise<void>(resolve => {
+    el.addEventListener('ended', () => resolve(), { once: true });
+  });
+  await el.play();
+  await done;
+}
+
+/*
+ * Speak a turn, one segment at a time. A reaction+question turn is two
+ * segments: the reaction is synthesised live, the question comes straight out
+ * of the cache, so it lands right behind it with only a scheduling gap — which
+ * reads as the natural beat between a remark and a question.
+ */
+async function speakParts(parts: string[], onEnd?: () => void) {
   if (typeof window === 'undefined') return;
   stopSpeech();
   const token = speechToken;
   _onSpeakStart?.();
+
+  const segments = parts.map(p => p?.trim()).filter(Boolean) as string[];
   try {
-    const res = await fetch('/api/tts', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text }),
-    });
-    if (!res.ok) throw new Error('TTS unavailable');
-    if (token !== speechToken) return; // a newer utterance already took over
+    for (const segment of segments) {
+      if (token !== speechToken) return;
 
-    // Streaming Gemini path — play chunks as they arrive
-    if (res.headers.get('Content-Type')?.startsWith('audio/')) {
-      await playPcmStream(res, token, onEnd);
-      return;
+      const inflight = ttsInflight.get(segment);
+      if (inflight) await inflight;           // prefetch still landing — ride it
+      const cached = ttsCache.get(segment);
+      if (cached) { await playClip(cached, token); continue; }
+
+      const res = await fetchTTS(segment);
+      if (!res.ok) throw new Error('TTS unavailable');
+      if (token !== speechToken) return;
+      if (res.headers.get('Content-Type')?.startsWith('audio/')) await playPcmStream(res, token);
+      else await playJsonClip(res, token);
     }
-
-    // Cloud TTS path — one complete clip
-    const { audio, mime } = await res.json();
     if (token !== speechToken) return;
-    currentAudio = new Audio(`data:${mime || 'audio/ogg'};base64,${audio}`);
-    // Tap this clip into the same analyser so the orb reacts on the fallback
-    // path too. Routing through the graph means the context must be running.
-    primeAudio();
-    if (audioCtx && analyser) {
-      try {
-        if (audioCtx.state === 'suspended') await audioCtx.resume();
-        audioCtx.createMediaElementSource(currentAudio).connect(analyser);
-      } catch { /* untapped — the clip still plays, the orb just breathes */ }
-    }
-    currentAudio.addEventListener('ended', () => { _onSpeakEnd?.(); if (onEnd) setTimeout(onEnd, 700); }, { once: true });
-    await currentAudio.play();
+    _onSpeakEnd?.();
+    if (onEnd) setTimeout(onEnd, POST_SPEECH_MS);
   } catch {
     if (token !== speechToken) return;
+    const text = segments.join(' ');
     speakFallback(text);
     // Web Speech gives no reliable end event across browsers, so hold the
     // speaking state (and the orb's motion) for a word-count estimate.
@@ -251,6 +340,8 @@ async function speak(text: string, onEnd?: () => void) {
     if (onEnd) setTimeout(onEnd, est);
   }
 }
+
+const speak = (text: string, onEnd?: () => void) => speakParts([text], onEnd);
 
 // ─── ICONS ───────────────────────────────────────────────────────────────────
 function MicIcon({ size = 22, color = 'currentColor' }: { size?: number; color?: string }) {
@@ -447,7 +538,14 @@ function ChatScreen({ onComplete, onBack }: {
     if (!last || last.role !== 'assistant') return;
     if (spokenIds.current.has(last.id)) return;
     spokenIds.current.add(last.id);
-    speak(last.content, () => maybeAutoListen());
+    speakParts(last.parts ?? [last.content], () => maybeAutoListen());
+  }, [messages]);
+
+  // Keep one question ahead: synthesise the next fixed question while the user
+  // is still answering the current one, so it plays from memory when it lands.
+  useEffect(() => {
+    const asked = messages.filter(m => m.role === 'assistant' && m.parts).length;
+    prefetchSpeech(QUESTIONS[asked]);
   }, [messages]);
 
   // Hand off to the reveal as soon as the payload arrives (the reveal screen
@@ -482,16 +580,16 @@ function ChatScreen({ onComplete, onBack }: {
     const setTimer = (ms: number) => { stopTimer(); silenceTimer = setTimeout(() => rec.stop(), ms); };
 
     rec.onstart = () => setIsListening(true);
-    rec.onspeechstart = () => { speechStarted = true; setTimer(2500); };
+    rec.onspeechstart = () => { speechStarted = true; setTimer(SILENCE_MS); };
     // Interim results are no longer drawn anywhere — they only keep the
     // silence timer alive while the user is still mid-sentence.
     rec.onresult = (e: { resultIndex: number; results: SpeechRecognitionResultList }) => {
       for (let i = e.resultIndex; i < e.results.length; i++) {
         if (e.results[i].isFinal) final += e.results[i][0].transcript;
       }
-      if (speechStarted) setTimer(2500);
+      if (speechStarted) setTimer(SILENCE_MS);
     };
-    rec.onspeechend = () => setTimer(2500);
+    rec.onspeechend = () => setTimer(SILENCE_MS);
     rec.onerror = () => { stopTimer(); setIsListening(false); };
     rec.onend = () => {
       stopTimer();
@@ -514,7 +612,7 @@ function ChatScreen({ onComplete, onBack }: {
     if (!hasSpeech) return;
     setTimeout(() => {
       if (!userPausedRef.current && inputMode === 'voice') startListening();
-    }, 250);
+    }, 120);
   };
 
   const handleTextSend = () => {
@@ -991,9 +1089,9 @@ function AskCoachPanel({ reveal, userName, discoverySummary, onClose }: {
         else int += e.results[i][0].transcript;
       }
       setInterim(finalText || int);
-      setTimer(2500);
+      setTimer(SILENCE_MS);
     };
-    rec.onspeechend = () => setTimer(2500);
+    rec.onspeechend = () => setTimer(SILENCE_MS);
     rec.onend = () => { if (timer) clearTimeout(timer); setIsListening(false); setInterim(''); if (finalText.trim()) send(finalText.trim()); };
     rec.onerror = () => { if (timer) clearTimeout(timer); setIsListening(false); setInterim(''); };
     recRef.current = rec;

@@ -369,24 +369,6 @@ function SendIcon({ size = 18, color = 'currentColor' }: { size?: number; color?
   );
 }
 
-// ─── COACH ORB ───────────────────────────────────────────────────────────────
-// Luminous blue presence standing in for the coach. Visual only.
-function CoachOrb({ size, state = 'idle' }: { size: number; state?: 'idle' | 'listening' | 'thinking' | 'speaking' }) {
-  const anim =
-    state === 'listening' ? 'orbListen 1.3s ease-in-out infinite'
-    : state === 'thinking' ? 'orbThink 2.4s ease-in-out infinite'
-    : 'orbIdle 4.5s ease-in-out infinite';
-  const haloSize = size * 1.9;
-  const haloOffset = -(haloSize - size) / 2;
-  return (
-    <div className="ali-orb" style={{ width: size, height: size }}>
-      <div className="ali-orb-halo" style={{ width: haloSize, height: haloSize, top: haloOffset, left: haloOffset, animation: anim }} />
-      <div className="ali-orb-core" style={{ animation: anim }} />
-      <div className="ali-orb-shine" style={{ inset: size * 0.14 }} />
-    </div>
-  );
-}
-
 // The orb reads whichever level its current mode implies: the coach's real
 // waveform while speaking, a synthetic envelope while the user talks (speech
 // recognition owns the mic, so there's no second stream to analyse), and a
@@ -482,7 +464,7 @@ function LandingScreen({ mobileFrame, onToggleFrame, onStart }: {
         </h1>
 
         <p className="landing-sub">
-          Tell us your vision, and we&apos;ll show you the vehicle built to take you there.
+          Let&apos;s keep you in the loop with the new Ford vehicle coming for a situation just like yours.
         </p>
 
         <div className="landing-cta-area">
@@ -678,7 +660,7 @@ function ChatScreen({ onComplete, onBack }: {
           : ''
         }`} />
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div className="chat-ali-label">Your guide</div>
+          <div className="chat-ali-label">Miles</div>
           <div className="chat-ali-sub">
             {state === 'loading' ? 'Thinking…'
              : isListening ? 'Listening…'
@@ -755,7 +737,7 @@ function ChatScreen({ onComplete, onBack }: {
               {isListening
                 ? 'Listening… tap to pause'
                 : isSpeaking
-                ? 'Your guide is talking…'
+                ? 'Miles is talking…'
                 : state === 'loading'
                 ? 'Thinking…'
                 : state === 'revealed'
@@ -918,7 +900,6 @@ function ShareScreen({ reveal, onRestart, onBack }: {
   const configTitle = config ? CONFIG_LABELS[config] : 'Your next you';
   const theme = themeFor(config);
   const cardRef = useRef<HTMLDivElement>(null);
-  const [copied, setCopied] = useState(false);
   const [saving, setSaving] = useState(false);
 
   const FILENAME = 'discover-your-next-you.png';
@@ -945,17 +926,6 @@ function ShareScreen({ reveal, onRestart, onBack }: {
         a.click();
       }
     }, 'image/png');
-  };
-
-  const handleCopy = async () => {
-    try {
-      await navigator.clipboard.writeText(reveal.caption);
-    } catch {
-      const el = Object.assign(document.createElement('textarea'), { value: reveal.caption });
-      document.body.appendChild(el); el.select(); document.execCommand('copy'); document.body.removeChild(el);
-    }
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2200);
   };
 
   const handleSave = async () => {
@@ -992,7 +962,7 @@ function ShareScreen({ reveal, onRestart, onBack }: {
           </div>
 
           <div className="share-card-footer">
-            <span className="share-card-hashtags">#DiscoverYourNextYou #Ford</span>
+            <span className="share-card-hashtags">Ford.com</span>
             <img src={UI_OVAL} alt="Ford" className="share-card-oval" />
           </div>
         </div>
@@ -1001,9 +971,6 @@ function ShareScreen({ reveal, onRestart, onBack }: {
       <div className="share-actions">
         <button className="share-action-btn share-action-fill" onClick={handleShare}>
           Share
-        </button>
-        <button className="share-action-btn share-action-outline" onClick={handleCopy}>
-          {copied ? 'Caption copied ✓' : 'Copy caption'}
         </button>
         <button className="share-action-btn share-action-outline" onClick={handleSave} disabled={saving}>
           {saving ? '…' : 'Save'}
@@ -1015,220 +982,11 @@ function ShareScreen({ reveal, onRestart, onBack }: {
   );
 }
 
-// ─── ASK THE COACH PANEL ───────────────────────────────────────────────────────
-type AskMsg = { id: number; role: 'user' | 'assistant'; content: string };
-
-function AskCoachPanel({ reveal, userName, discoverySummary, onClose }: {
-  reveal: GothamRevealPayload;
-  userName?: string;
-  discoverySummary?: string;
-  onClose: () => void;
-}) {
-  const fs = reveal.future_self;
-  const config = safeConfig(fs.config_id);
-  const [msgs,       setMsgs]       = useState<AskMsg[]>([]);
-  const [loading,    setLoading]    = useState(false);
-  const [textInput,  setTextInput]  = useState('');
-  const [mode,       setMode]       = useState<'voice' | 'text'>('text');
-  const [isListening, setIsListening] = useState(false);
-  const [isSpeaking,  setIsSpeaking] = useState(false);
-  const [interim,    setInterim]    = useState('');
-  const scrollRef    = useRef<HTMLDivElement>(null);
-  const recRef       = useRef<EventTarget & { start(): void; stop(): void } | null>(null);
-  const nextId       = useRef(0);
-
-  useEffect(() => {
-    const opener = userName
-      ? `I'm still here, ${userName}. If you're curious about your next chapter or the vehicle built for it, ask me anything.`
-      : `I'm still here. If you're curious about your next chapter or the vehicle built for it, ask me anything.`;
-    setMsgs([{ id: nextId.current++, role: 'assistant', content: opener }]);
-    setIsSpeaking(true);
-    speak(opener, () => setIsSpeaking(false));
-    return () => {
-      stopSpeech();
-      recRef.current?.stop();
-    };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  useEffect(() => {
-    if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight + 400;
-  }, [msgs, loading, interim]);
-
-  const send = async (text: string) => {
-    if (!text.trim() || loading) return;
-    const userMsg = { id: nextId.current++, role: 'user' as const, content: text.trim() };
-    const next    = [...msgs, userMsg];
-    setMsgs(next);
-    setTextInput('');
-    setLoading(true);
-
-    try {
-      const res = await fetch('/api/ask-coach', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          messages: next.map(m => ({ role: m.role, content: m.content })),
-          context: {
-            userName,
-            headline: fs.headline,
-            narrative: fs.narrative,
-            configLabel: config ? CONFIG_LABELS[config] : undefined,
-            discoverySummary,
-          },
-        }),
-      });
-      const data = await res.json();
-      const reply = data.content || data.error || "Hmm — try asking that again?";
-      setMsgs(m => [...m, { id: nextId.current++, role: 'assistant', content: reply }]);
-      setIsSpeaking(true);
-      speak(reply, () => setIsSpeaking(false));
-    } catch {
-      setMsgs(m => [...m, { id: nextId.current++, role: 'assistant', content: "Something glitched. Try again?" }]);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const startVoice = () => {
-    if (isListening || loading) return;
-    const SRA = (window as typeof window & { SpeechRecognition?: unknown; webkitSpeechRecognition?: unknown }).SpeechRecognition
-             || (window as typeof window & { webkitSpeechRecognition?: unknown }).webkitSpeechRecognition;
-    if (!SRA) return;
-    stopSpeech();
-
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const rec = new (SRA as any)();
-    rec.continuous = true; rec.interimResults = true; rec.lang = 'en-US';
-    let finalText = '';
-    let timer: ReturnType<typeof setTimeout> | null = null;
-    const setTimer = (ms: number) => { if (timer) clearTimeout(timer); timer = setTimeout(() => rec.stop(), ms); };
-
-    rec.onstart = () => setIsListening(true);
-    rec.onspeechstart = () => setTimer(2500);
-    rec.onresult = (e: { resultIndex: number; results: SpeechRecognitionResultList }) => {
-      let int = '';
-      for (let i = e.resultIndex; i < e.results.length; i++) {
-        if (e.results[i].isFinal) finalText += e.results[i][0].transcript;
-        else int += e.results[i][0].transcript;
-      }
-      setInterim(finalText || int);
-      setTimer(SILENCE_MS);
-    };
-    rec.onspeechend = () => setTimer(SILENCE_MS);
-    rec.onend = () => { if (timer) clearTimeout(timer); setIsListening(false); setInterim(''); if (finalText.trim()) send(finalText.trim()); };
-    rec.onerror = () => { if (timer) clearTimeout(timer); setIsListening(false); setInterim(''); };
-    recRef.current = rec;
-    rec.start();
-    setTimer(12000);
-  };
-
-  return (
-    <div className="ask-ali-overlay" onClick={onClose}>
-      <div className="ask-ali-panel" onClick={e => e.stopPropagation()}>
-        <div className="ask-ali-header">
-          <CoachOrb size={36} state={isSpeaking ? 'speaking' : isListening ? 'listening' : loading ? 'thinking' : 'idle'} />
-          <div style={{ flex: 1 }}>
-            <div className="chat-ali-label">Your guide</div>
-            <div className="chat-ali-sub">
-              {loading ? 'Thinking…' : isListening ? 'Listening…' : isSpeaking ? 'Speaking…' : 'Ask about your next you'}
-            </div>
-          </div>
-          <button className="era-icon-btn" onClick={onClose} aria-label="Close">
-            <svg width={14} height={14} viewBox="0 0 14 14" fill="none">
-              <path d="M3 3l8 8M11 3l-8 8" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-            </svg>
-          </button>
-        </div>
-
-        <div ref={scrollRef} className="ask-ali-messages">
-          {msgs.map(m => (
-            <div key={m.id} className={`chat-bubble-wrap ${m.role === 'assistant' ? 'ali' : 'user'}`}>
-              <div className={`chat-bubble ${m.role === 'assistant' ? 'ali' : 'user'}`}>{m.content}</div>
-            </div>
-          ))}
-          {isListening && interim && (
-            <div className="chat-bubble-wrap user" style={{ opacity: 0.55 }}>
-              <div className="chat-bubble user">{interim}</div>
-            </div>
-          )}
-          {loading && (
-            <div className="chat-thinking">
-              {[0, 1, 2].map(i => (
-                <div key={i} className="chat-thinking-dot" style={{ animation: `blink 1.2s ${i * 0.18}s ease-in-out infinite` }} />
-              ))}
-            </div>
-          )}
-        </div>
-
-        <div className="ask-ali-dock">
-          <div className="input-mode-toggle">
-            <button
-              className={`input-mode-btn${mode === 'voice' ? ' active' : ''}`}
-              onClick={() => setMode('voice')}
-              disabled={loading || isListening}
-            >
-              <MicIcon size={14} color="currentColor" /> Voice
-            </button>
-            <button
-              className={`input-mode-btn${mode === 'text' ? ' active' : ''}`}
-              onClick={() => { setMode('text'); recRef.current?.stop(); }}
-              disabled={loading}
-            >
-              <KeyboardIcon size={14} color="currentColor" /> Type
-            </button>
-          </div>
-
-          {mode === 'text' ? (
-            <div className="chat-text-input">
-              <input
-                value={textInput}
-                onChange={e => setTextInput(e.target.value)}
-                onKeyDown={e => e.key === 'Enter' && send(textInput)}
-                placeholder={loading ? 'One moment…' : 'Ask about your next you…'}
-                disabled={loading}
-                autoFocus
-              />
-              <button onClick={() => send(textInput)} disabled={!textInput.trim() || loading} aria-label="Send">
-                <SendIcon size={18} color="#fff" />
-              </button>
-            </div>
-          ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
-              <button
-                onClick={isListening ? () => recRef.current?.stop() : startVoice}
-                disabled={loading || isSpeaking}
-                aria-label={isListening ? 'Stop listening' : 'Start speaking'}
-                style={{
-                  width: 62, height: 62, borderRadius: '50%', border: 'none',
-                  background: isListening ? 'var(--accent)' : 'var(--ink)', color: '#fff',
-                  cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  boxShadow: !isListening ? '0 6px 20px var(--shadow)' : 'none',
-                  transition: 'all 0.3s', opacity: loading || isSpeaking ? 0.5 : 1,
-                }}
-              >
-                <MicIcon size={24} color="#fff" />
-              </button>
-              <div className="chat-dock-hint">
-                {isListening ? 'Listening… tap to stop' : isSpeaking ? 'Your guide is talking…' : 'Tap to speak'}
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
 // ─── ROOT ────────────────────────────────────────────────────────────────────
 export default function DiscoverApp() {
   const [screen,       setScreen]       = useState<Screen>('landing');
   const [flowKey,      setFlowKey]      = useState(0);
   const [reveal,       setReveal]       = useState<GothamRevealPayload | null>(null);
-  const [discoveryCtx, setDiscoveryCtx] = useState<{ userName?: string; summary?: string } | null>(null);
-  const [askOpen,      setAskOpen]      = useState(false);
-  const [hintShown,    setHintShown]    = useState(false);
-  const [showHint,     setShowHint]     = useState(false);
   const [mobileFrame,  setMobileFrame]  = useState(false);
 
   useEffect(() => {
@@ -1251,34 +1009,10 @@ export default function DiscoverApp() {
     stopSpeech();
     setFlowKey(k => k + 1);
     setReveal(null);
-    setDiscoveryCtx(null);
-    setAskOpen(false);
-    setHintShown(false);
-    setShowHint(false);
     go('landing');
   };
 
-  // First time on the reveal, introduce the "Ask the coach" button.
-  useEffect(() => {
-    if (screen !== 'reveal' || hintShown || !reveal) return;
-    setHintShown(true);
-    const introTimer = setTimeout(() => {
-      setShowHint(true);
-      setTimeout(() => setShowHint(false), 6000);
-    }, 4200);
-    return () => clearTimeout(introTimer);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [screen, reveal]);
-
-  useEffect(() => { if (askOpen) setShowHint(false); }, [askOpen]);
-
-  const handleChatComplete = (r: GothamRevealPayload, msgs: { role: 'user' | 'assistant'; content: string }[]) => {
-    const userMsgs = msgs.filter(m => m.role === 'user').slice(1); // drop hidden kickoff
-    const firstReply = userMsgs[0]?.content.trim() || '';
-    const nameMatch = firstReply.match(/(?:^|i'?m |i am |it'?s |this is |call me |my name is )?([A-Za-z][A-Za-z\-']{1,24})/i);
-    const userName = nameMatch ? nameMatch[1].replace(/[.!?,]$/, '') : undefined;
-    const summary = userMsgs.slice(1).map((m, i) => `Q${i + 1}: ${m.content}`).join('\n');
-    setDiscoveryCtx({ userName, summary });
+  const handleChatComplete = (r: GothamRevealPayload) => {
     setReveal(r);
     go('reveal');
   };
@@ -1311,39 +1045,6 @@ export default function DiscoverApp() {
         )}
       </div>
 
-      {/* Persistent "Ask the coach" floating button on post-reveal screens */}
-      {reveal && (screen === 'reveal' || screen === 'capture' || screen === 'share') && !askOpen && (
-        <>
-          {showHint && (
-            <div className="ask-ali-hint">
-              <div className="ask-ali-hint-note">
-                Right here whenever<br />you need me <span style={{ fontSize: 18 }}>✦</span>
-              </div>
-              <svg className="ask-ali-hint-arrow" width="24" height="56" viewBox="0 0 24 56" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <path d="M12 4 L 12 46" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" fill="none" />
-                <path d="M4 38 L 12 50 L 20 38" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" fill="none" />
-              </svg>
-            </div>
-          )}
-          <button
-            className={`ask-ali-fab${showHint ? ' pulsing' : ''}`}
-            onClick={() => setAskOpen(true)}
-            aria-label="Ask the coach"
-          >
-            <CoachOrb size={36} state={showHint ? 'speaking' : 'idle'} />
-            <span className="ask-ali-fab-label">Ask the coach</span>
-          </button>
-        </>
-      )}
-
-      {askOpen && reveal && (
-        <AskCoachPanel
-          reveal={reveal}
-          userName={discoveryCtx?.userName}
-          discoverySummary={discoveryCtx?.summary}
-          onClose={() => setAskOpen(false)}
-        />
-      )}
     </div>
   );
 }

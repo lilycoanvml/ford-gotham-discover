@@ -25,13 +25,14 @@
   --signal:      #F2B705; /* placeholder — warm signal, use sparingly */
 
   /* ── Figma palette ──────────────────────────────────────────────────────
-     The three pastels are a set: they label the "who / will you / be?" chips
-     on the landing, then reappear in order as the user's chat bubbles. */
+     The three pastels are a set: they fill the Find / Your / Fathom chips on
+     the landing, then return in the same order as the orb's per-question
+     colours. */
   --gd-black:   #000000;
   --gd-surface: #14141D; /* guide bubble, back button, input field */
-  --gd-steel:   #89A0B1; /* primary action + "who" + 3rd user bubble */
-  --gd-terra:   #DC997E; /* "will you" + 1st user bubble */
-  --gd-sage:    #B3C3A9; /* "be?" + 2nd user bubble */
+  --gd-steel:   #89A0B1; /* primary action + "Find" chip + Q3 orb */
+  --gd-terra:   #DC997E; /* "Your" chip + Q1 orb */
+  --gd-sage:    #B3C3A9; /* "Fathom" chip + Q2 orb */
   --gd-grey:    #8A8A8A; /* secondary copy */
   --gd-grey-2:  #999999; /* chat status line */
   --gd-glow:    #63A1CE; /* loading-screen radial glow */
@@ -47,7 +48,7 @@
   --font-mono:    "Space Mono", ui-monospace, monospace;
 
   /* ── Semantic tokens ──────────────────────────────────────────────────────
-     Shared surfaces (chat dock, ask-the-coach panel, inputs) read these, so
+     Shared surfaces (chat dock, inputs) read these, so
      repointing them at the palette above is what carries the redesign through
      the parts of the app the Figma frames don't draw. */
   --bg:           var(--gd-black);
@@ -180,8 +181,8 @@ button { font-family: inherit; -webkit-tap-highlight-color: transparent; }
 .landing-chip {
   display:flex; align-items:center; justify-content:center;
   padding:0.4em 0.378em;              /* 36px / 34px @ 90px */
-  font-family:var(--font-display); font-style:italic; font-weight:400;
-  font-size:1em; line-height:1; color:#fff;
+  font-family:var(--font-display); font-style:normal; font-weight:400;
+  font-size:1em; line-height:1; color:var(--gd-black);
   white-space:nowrap; flex-shrink:0;
 }
 .landing-chip-1 { background:var(--gd-steel); border-radius:0.556em; } /* 50px  */
@@ -592,128 +593,6 @@ button { font-family: inherit; -webkit-tap-highlight-color: transparent; }
 .share-discover:hover { color:#fff; }
 
 /* ═══════════════════════════════════════════════════════════
-   ASK THE COACH — floating button + panel (no Figma frame; palette-matched)
-   ═══════════════════════════════════════════════════════════ */
-@keyframes fabIn    { from { opacity:0; transform:translateY(20px) scale(0.92); } to { opacity:1; transform:none; } }
-@keyframes panelIn  { from { opacity:0; transform:translateY(40px); } to { opacity:1; transform:none; } }
-@keyframes overlayIn { from { opacity:0; } to { opacity:1; } }
-@keyframes fabPulse {
-  0%,100% { box-shadow: 0 10px 30px var(--shadow), 0 0 0 0 rgba(137,160,177,0.55); }
-  50%     { box-shadow: 0 10px 30px var(--shadow), 0 0 0 14px rgba(137,160,177,0); }
-}
-
-.ask-ali-fab {
-  position:fixed; bottom:20px; right:20px; z-index:50;
-  display:flex; align-items:center; gap:10px;
-  padding:8px 18px 8px 8px; height:56px; border-radius:100px;
-  background:var(--gd-surface); border:1px solid rgba(255,255,255,0.12);
-  cursor:pointer; box-shadow:0 10px 30px var(--shadow);
-  animation: fabIn 0.4s cubic-bezier(0.34,1.56,0.64,1) both 0.2s;
-  transition:transform 0.2s ease-out;
-}
-.ask-ali-fab:hover { transform:translateY(-2px) scale(1.02); }
-.ask-ali-fab.pulsing { border-color:var(--gd-steel); animation: fabPulse 1.8s ease-out infinite; }
-.ask-ali-fab-label {
-  font-family:var(--font-display); font-size:10.5px;
-  letter-spacing:0.14em; text-transform:uppercase;
-  color:#fff; padding-right:4px;
-}
-
-.ask-ali-hint {
-  position:fixed; bottom:86px; right:32px; z-index:55;
-  display:flex; flex-direction:column; align-items:center; gap:2px;
-  pointer-events:none; animation: fadeUp 0.42s ease-out both;
-  transition:opacity 0.5s ease-out;
-}
-.ask-ali-hint-note {
-  font-family:var(--font-display); font-style:italic;
-  font-size:15px; line-height:1.25;
-  color:#000; background:var(--gd-steel);
-  padding:9px 15px; border-radius:16px 16px 4px 16px;
-  text-align:center; white-space:nowrap;
-}
-.ask-ali-hint-arrow { color:var(--gd-steel); }
-
-.ask-ali-overlay {
-  position:fixed; inset:0; z-index:60;
-  background:rgba(0,0,0,0.62); backdrop-filter:blur(6px);
-  display:flex; align-items:flex-end; justify-content:center;
-  padding:32px 20px 20px;
-  animation: overlayIn 0.22s ease-out both;
-}
-.ask-ali-panel {
-  width:100%; max-width:460px; max-height:82vh; min-height:520px;
-  background:var(--gd-black); border:1px solid rgba(255,255,255,0.10);
-  border-radius:24px; overflow:hidden;
-  display:flex; flex-direction:column;
-  animation: panelIn 0.32s ease-out both;
-}
-.ask-ali-header {
-  display:flex; align-items:center; gap:12px;
-  padding:16px 18px; border-bottom:1px solid var(--line); flex-shrink:0;
-}
-/* Panel close button */
-.era-icon-btn {
-  width:40px; height:40px; border-radius:50%; border:none;
-  background:var(--gd-surface); color:#fff;
-  display:flex; align-items:center; justify-content:center;
-  cursor:pointer; flex-shrink:0;
-  transition:background 0.18s, transform 0.18s;
-}
-.era-icon-btn:hover { background:var(--surface2); transform:scale(1.05); }
-.ask-ali-messages { flex:1; overflow-y:auto; padding:16px 20px; display:flex; flex-direction:column; gap:14px; }
-
-/* Chat bubbles now belong to this panel alone — the discovery screen is the
-   wordless orb. Figma radii: 25 all round, 5 on the bottom-outer corner (the
-   tail), 50 on the two far corners; on a single-line bubble the browser clamps
-   those 50s to a half-round, which is how the short pills are drawn. */
-.chat-bubble-wrap { max-width:84%; animation:rise 0.32s ease-out both; }
-.chat-bubble-wrap.ali  { align-self:flex-start; }
-.chat-bubble-wrap.user { align-self:flex-end; }
-.chat-bubble {
-  padding:clamp(11px, 1cqw, 14px) clamp(16px, 1.6cqw, 23px);
-  font-family:var(--font-display); font-weight:400;
-  font-size:clamp(14px, 1.15cqw, 16.5px); line-height:1.45;
-}
-.chat-bubble.ali {
-  background:var(--gd-surface); color:#fff;
-  border-radius:25px 50px 50px 5px;
-}
-.chat-bubble.user {
-  background:var(--gd-steel); color:#000;
-  border-radius:50px 25px 5px 50px;
-}
-.chat-bubble em { font-style:italic; }
-
-.chat-thinking {
-  align-self:flex-start; display:flex; gap:6px;
-  padding:14px 20px; background:var(--gd-surface);
-  border-radius:25px 50px 50px 5px;
-}
-.chat-thinking-dot { width:7px; height:7px; border-radius:50%; background:var(--gd-steel); opacity:0.6; }
-.ask-ali-dock {
-  border-top:1px solid var(--line); padding:14px 18px 20px;
-  display:flex; flex-direction:column; align-items:center; gap:10px; flex-shrink:0;
-}
-
-@media (max-width: 540px) {
-  .ask-ali-overlay { padding:0; align-items:stretch; }
-  .ask-ali-panel { max-width:none; max-height:100vh; min-height:100vh; border-radius:0; border:none; }
-
-  /* The FAB floats over the three post-reveal screens (it isn't in the Figma
-     frames). On mobile it collapses to a bare orb so its footprint stays in the
-     corner, and those screens reserve that footprint at the screen level — so
-     scrolling to the end always leaves the last control clear of it. */
-  .ask-ali-fab { padding:8px; width:52px; height:52px; gap:0; bottom:16px; right:16px; }
-  .ask-ali-fab-label { display:none; }
-  .reveal-screen, .capture-screen, .share-screen { padding-bottom:80px; }
-
-  /* No room for the coach-mark above a corner FAB without shoving the design
-     up; the FAB's pulse introduces itself instead. Kept on desktop. */
-  .ask-ali-hint { display:none; }
-}
-
-/* ═══════════════════════════════════════════════════════════
    MORPHING SILHOUETTE — retained for the ambient background layers only
    ═══════════════════════════════════════════════════════════ */
 .morph-silhouette { position:relative; width:100%; pointer-events:none; }
@@ -744,27 +623,6 @@ button { font-family: inherit; -webkit-tap-highlight-color: transparent; }
   mix-blend-mode:screen;
 }
 
-/* ═══════════════════════════════════════════════════════════
-   COACH ORB — used in the ask-the-coach panel + FAB
-   ═══════════════════════════════════════════════════════════ */
-.ali-orb { position:relative; flex-shrink:0; }
-.ali-orb-halo {
-  position:absolute; border-radius:50%;
-  background: radial-gradient(circle, var(--gd-steel), transparent 62%);
-  filter: blur(28px); opacity:0.30;
-}
-.ali-orb-core {
-  position:absolute; inset:0; border-radius:50%;
-  background:linear-gradient(212.68deg,
-    var(--gd-steel) 16%, var(--gd-sage) 49.4%, var(--gd-terra) 90.7%);
-}
-.ali-orb-shine {
-  position:absolute; border-radius:50%;
-  border:1.5px solid rgba(255,255,255,0.30);
-  mask-image: linear-gradient(135deg,#000 0%,transparent 55%);
-  -webkit-mask-image: linear-gradient(135deg,#000 0%,transparent 55%);
-}
-
 /* ══════════════════════════════════════════════════════════════════
    MOBILE-FRAME DEMO MODE — wraps the app in a phone-shaped box for
    presentation. Purely visual, no functional change.
@@ -786,9 +644,6 @@ body:has(#era-app.mobile-frame) {
   background:#141418;
   background-image:radial-gradient(circle at 30% 20%, #22222a 0%, #08080a 70%);
 }
-#era-app.mobile-frame .ask-ali-fab,
-#era-app.mobile-frame .ask-ali-overlay,
-#era-app.mobile-frame .ask-ali-hint { position:absolute; }
 
 /* On a real phone the frame is pointless — drop it */
 @media (max-width: 540px) {
@@ -798,9 +653,6 @@ body:has(#era-app.mobile-frame) {
     transform:none; border-radius:0; box-shadow:none;
   }
   body:has(#era-app.mobile-frame) { background:var(--bg); }
-  #era-app.mobile-frame .ask-ali-fab,
-  #era-app.mobile-frame .ask-ali-overlay,
-  #era-app.mobile-frame .ask-ali-hint { position:fixed; }
 }
 
 @media (max-width: 768px) {

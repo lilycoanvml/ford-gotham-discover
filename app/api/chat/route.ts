@@ -48,7 +48,7 @@ They have now answered all three questions. Respond with ONLY a JSON object. No 
     "primaryColor": "[hex within the Ford palette below]",
     "accentColor": "[hex within the Ford palette below]"
   },
-  "caption": "[A first-person, shareable social caption in the user's voice, ~40-55 words. It states the thing they've always wanted to do as an inspiring declaration (not a brag), ties it to needing a vehicle as bold as that ambition, and ends with: 'Discover your next you: [Link] #DiscoverYourNextYou #Ford']",
+  "caption": "[A first-person, shareable social caption in the user's voice, ~40-55 words. It states the thing they've always wanted to do as an inspiring declaration (not a brag), ties it to needing a vehicle as bold as that ambition, and ends with: 'Discover your next you: Ford.com']",
   "closingMessage": "[The coach's SPOKEN reveal, under 45 words, using their name once. Name their future self out loud and tie it to something specific they said. Then invite them to see it. No product mentions, no specs.]"
 }
 

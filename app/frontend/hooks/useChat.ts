@@ -37,6 +37,13 @@ export type ChatState = 'idle' | 'loading' | 'revealed' | 'error';
 // Neutral kickoff — the user has entered the experience, not a shopping funnel.
 const KICKOFF = 'Hi, I want to discover my next self.';
 
+// Miles' opening is fixed and spoken locally. There is no longer an intro
+// screen to cover the round trip, so asking the model for this line would leave
+// the user watching a silent orb for a second or two before anything happened.
+// The chat system prompt knows this line was already said and never repeats it.
+export const OPENING_LINE =
+  "Hey there — I'm Miles, and I'm here to help you find your Fathom. Change starts with a name. What's yours?";
+
 export function useChat() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [state, setState] = useState<ChatState>('idle');
@@ -97,27 +104,13 @@ export function useChat() {
     [messages, state, addMessage]
   );
 
-  const startConversation = useCallback(async () => {
+  // Seeds the transcript locally — no network. The kickoff stays in history so
+  // the model still sees a user turn first, which startChat requires.
+  const startConversation = useCallback(() => {
     if (messages.length > 0) return;
-    setState('loading');
-
-    try {
-      const res = await fetch('/api/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ messages: [{ role: 'user', content: KICKOFF }] }),
-      });
-
-      if (!res.ok) throw new Error('API error');
-      const data = await res.json();
-
-      addMessage('user', KICKOFF);
-      addMessage('assistant', data.content || data.data?.closingMessage || 'Welcome.');
-      setState('idle');
-    } catch {
-      setError('Could not connect. Please refresh and try again.');
-      setState('error');
-    }
+    addMessage('user', KICKOFF);
+    addMessage('assistant', OPENING_LINE);
+    setState('idle');
   }, [messages.length, addMessage]);
 
   const reset = useCallback(() => {

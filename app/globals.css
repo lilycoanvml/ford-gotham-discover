@@ -2,8 +2,8 @@
    DESIGN SYSTEM — Discover Your Next You (Ford / Gotham)
 
    Source of truth: Figma "Ford Gotham Discovery" (file Uj1ncN31RmfCDZnJxyoEly)
-     41:550  Loading Screen   → intro
-     41:548  Intro            → landing
+     41:548  Intro            → landing (Begin now enters the chat directly;
+                                the 41:550 loading beat was cut)
      41:513  Chat             → chat
      24:264  Personality 1    → reveal
      33:282  Personality 2    → reveal (2-line title variant; authoritative spacing)
@@ -141,52 +141,6 @@ button { font-family: inherit; -webkit-tap-highlight-color: transparent; }
 .gd-back img { width:100%; height:100%; display:block; }
 .gd-back:hover { transform:scale(1.05); }
 .gd-back:active { opacity:0.7; }
-
-/* ═══════════════════════════════════════════════════════════
-   LOADING SCREEN — Figma 41:550 (the app's "intro" beat)
-   ═══════════════════════════════════════════════════════════ */
-.intro-screen {
-  position:absolute; inset:0; display:flex; flex-direction:column;
-  align-items:center; justify-content:center;
-  background:var(--gd-black); overflow:hidden;
-  animation: screenIn 0.6s ease-out both;
-}
-.intro-screen.exiting { animation: screenIn 0.55s ease-in reverse forwards; }
-
-/* 591px radial glow. In Figma its centre sits above the wordmark so the type
-   reads out of the lower half of the glow — hence the translate. */
-.intro-glow {
-  position:absolute; left:50%; top:50%;
-  width:min(591px, 152cqw); height:min(591px, 152cqw);
-  transform:translate(-50%, -62%);
-  pointer-events:none; z-index:0;
-}
-.intro-glow img { width:100%; height:100%; display:block; }
-
-.intro-text-area { position:relative; z-index:1; text-align:center; width:100%; padding:0 20px; }
-.intro-greeting {
-  font-family:var(--font-display); font-weight:400;
-  font-size:clamp(30px, 7.6cqw, 75px); line-height:1;
-  color:#fff; text-wrap:balance;
-  animation: fadeUp 0.8s ease-out both 0.25s;
-}
-.intro-greeting em { font-style:italic; color:var(--gd-steel); }
-/* Sits between the greeting and the tagline, on the same fadeUp stagger. */
-.intro-subhead {
-  font-family:var(--font-display); font-weight:400; font-style:italic;
-  font-size:clamp(15px, 3.2cqw, 32px); line-height:1.1;
-  color:var(--gd-steel); text-wrap:balance;
-  margin-top:clamp(6px, 1.2cqw, 12px);
-  animation: fadeUp 0.8s ease-out both 0.42s;
-}
-.intro-tagline {
-  font-family:var(--font-display); font-weight:700;
-  font-size:clamp(9px, 1.5cqw, 14.4px);
-  letter-spacing:0.30em; text-indent:0.30em; /* 4.32px @ 14.4px */
-  text-transform:uppercase; color:#fff;
-  margin-top:clamp(12px, 2.3cqw, 23px);
-  animation: fadeUp 0.8s ease-out both 0.55s;
-}
 
 /* ═══════════════════════════════════════════════════════════
    LANDING — Figma 41:548
@@ -839,7 +793,6 @@ body:has(#era-app.mobile-frame) {
 
 /* ── Reduced motion: calm the staged beats ── */
 @media (prefers-reduced-motion: reduce) {
-  .intro-greeting, .intro-subhead, .intro-tagline,
   .landing-chips, .landing-sub, .landing-cta-area,
   .chat-avatar { animation:none !important; }
   /* The orb itself stops in AudioOrb.tsx — it paints one static frame rather

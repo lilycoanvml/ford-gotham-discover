@@ -8,7 +8,7 @@ import AudioOrb from '@/app/frontend/components/AudioOrb';
 import type { OrbMode } from '@/app/frontend/components/AudioOrb';
 
 // ─── TYPES ───────────────────────────────────────────────────────────────────
-type Screen = 'landing' | 'intro' | 'chat' | 'reveal' | 'capture' | 'share';
+type Screen = 'landing' | 'chat' | 'reveal' | 'capture' | 'share';
 
 // Validate the model's config_id against the five known shapes; fall back safely.
 const KNOWN_CONFIGS = Object.keys(CONFIG_LABELS) as ConfigId[];
@@ -333,7 +333,6 @@ function Waveform() {
 
 // ─── SHARED FIGMA ASSETS ─────────────────────────────────────────────────────
 // Exported from "Ford Gotham Discovery". See README → "Design assets".
-const UI_GLOW  = '/ui/glow-orb.svg';         // 46:372 — loading-screen radial glow
 const UI_BACK  = '/ui/back-circle.svg';      // 41:681 — 61px circle + steel arrow
 const UI_OVAL  = '/brand/ford-oval.svg';     // 41:320 — Ford oval, dark variant
 const UI_FATHOM = '/brand/fathom-wordmark.svg'; // 46:360 — vehicle lockup
@@ -373,39 +372,6 @@ function BackButton({ onClick }: { onClick: () => void }) {
     <button className="gd-back" onClick={onClick} aria-label="Back">
       <img src={UI_BACK} alt="" aria-hidden="true" />
     </button>
-  );
-}
-
-// ─── INTRO / LOADING SCREEN (Figma 41:550) ───────────────────────────────────
-const INTRO_SPEECH = "Hi, I'm Miles. Take a breath — this is a moment just for you. No products, no pitch. Let's talk a little about what makes you you, because I want to see who you're becoming. Who knows — this chat could change everything about the road ahead.";
-
-function IntroScreen({ onDone }: { onDone: () => void }) {
-  const [exiting, setExiting] = useState(false);
-
-  useEffect(() => {
-    const t = setTimeout(() => {
-      speak(INTRO_SPEECH, () => {
-        setExiting(true);
-        setTimeout(onDone, 520);
-      });
-    }, 1000);
-    return () => clearTimeout(t);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  return (
-    <div className={`intro-screen${exiting ? ' exiting' : ''}`}>
-      {/* 591px radial glow — Figma 46:372 */}
-      <div className="intro-glow">
-        <img src={UI_GLOW} alt="" aria-hidden="true" />
-      </div>
-
-      <div className="intro-text-area">
-        <div className="intro-greeting">Discover your <em>next you</em></div>
-        <div className="intro-subhead">This changes everything</div>
-        <div className="intro-tagline">A guided moment of self-discovery</div>
-      </div>
-    </div>
   );
 }
 
@@ -1214,11 +1180,8 @@ export default function DiscoverApp() {
           <LandingScreen
             mobileFrame={mobileFrame}
             onToggleFrame={toggleMobileFrame}
-            onStart={() => { primeAudio(); go('intro'); }}
+            onStart={() => { primeAudio(); go('chat'); }}
           />
-        )}
-        {screen === 'intro' && (
-          <IntroScreen onDone={() => go('chat')} />
         )}
         {screen === 'chat' && (
           <ChatScreen

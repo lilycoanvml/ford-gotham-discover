@@ -1,21 +1,28 @@
 import { NextRequest, NextResponse } from 'next/server';
 
-// Lightweight email-shape check. Intentionally permissive — real validation
+// Lightweight phone-shape check. Intentionally permissive — real validation
 // happens at the ESP/CRM. We only guard against obvious junk.
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const PHONE_CHARS_RE = /^\+?[\d\s().-]+$/;
+
+function validPhone(raw: string) {
+  const trimmed = raw.trim();
+  const digits = trimmed.replace(/\D/g, '');
+  return PHONE_CHARS_RE.test(trimmed) && digits.length >= 10 && digits.length <= 15;
+}
 
 export async function POST(req: NextRequest) {
   try {
-    const { email } = (await req.json()) as { email?: string };
+    const { phone } = (await req.json()) as { phone?: string };
 
-    if (!email || !EMAIL_RE.test(email.trim())) {
-      return NextResponse.json({ ok: false, error: 'Invalid email' }, { status: 400 });
+    if (!phone || !validPhone(phone)) {
+      return NextResponse.json({ ok: false, error: 'Invalid phone number' }, { status: 400 });
     }
 
     // TODO: wire to real ESP/CRM (e.g. Salesforce Marketing Cloud / a Ford-approved
     // service). Do NOT persist PII beyond the request lifecycle until that exists.
     // For the prototype we only acknowledge — nothing is stored.
-    console.log('[subscribe] interest captured (not stored):', email.trim().replace(/(^.).*(@.*$)/, '$1***$2'));
+    const digits = phone.trim().replace(/\D/g, '');
+    console.log('[subscribe] interest captured (not stored):', `***${digits.slice(-4)}`);
 
     return NextResponse.json({ ok: true });
   } catch (err) {

@@ -212,14 +212,8 @@ button { font-family: inherit; -webkit-tap-highlight-color: transparent; }
      as margin instead of running to the edges. */
   --gd-hero-size: clamp(20px, calc(8.4cqw - 3px), 90px);
 }
-.landing-headline {
-  font-family:var(--font-display); font-weight:400;
-  font-size:var(--gd-hero-size); line-height:1;
-  color:#fff; letter-spacing:-0.005em;
-  animation: fadeUp 0.7s ease-out both 0.1s;
-}
-
-/* who / will you / be? — em-sized so the row scales as one unit */
+/* Find / Your / Fathom — the chip row IS the wordmark. Em-sized so it scales
+   as one unit; the three words total ~9.1em, the width the hero scale assumes. */
 .landing-chips {
   display:flex; align-items:flex-end; justify-content:center;
   flex-wrap:nowrap; width:100%;
@@ -227,6 +221,7 @@ button { font-family: inherit; -webkit-tap-highlight-color: transparent; }
   gap:0.233em;                    /* 21px @ 90px */
   max-width:100%;
   animation: fadeUp 0.7s ease-out both 0.24s;
+  margin:0; font-weight:400; letter-spacing:normal;
 }
 .landing-chip {
   display:flex; align-items:center; justify-content:center;
@@ -235,9 +230,9 @@ button { font-family: inherit; -webkit-tap-highlight-color: transparent; }
   font-size:1em; line-height:1; color:#fff;
   white-space:nowrap; flex-shrink:0;
 }
-.landing-chip-who   { background:var(--gd-steel); border-radius:0.556em; } /* 50px  */
-.landing-chip-will  { background:var(--gd-terra); border-radius:100px; }   /* pill  */
-.landing-chip-be    { background:var(--gd-sage);  border-radius:100px; }   /* pill  */
+.landing-chip-1 { background:var(--gd-steel); border-radius:0.556em; } /* 50px  */
+.landing-chip-2 { background:var(--gd-terra); border-radius:100px; }   /* pill  */
+.landing-chip-3 { background:var(--gd-sage);  border-radius:100px; }   /* pill  */
 
 .landing-sub {
   font-family:var(--font-display); font-style:italic; font-weight:400;
@@ -306,46 +301,26 @@ button { font-family: inherit; -webkit-tap-highlight-color: transparent; }
   color:var(--gd-grey-2); margin-top:3px;
 }
 
-.chat-messages {
-  flex:1; overflow-y:auto; position:relative; z-index:1;
-  padding:clamp(16px, 3cqw, 40px) clamp(16px, 3.3cqw, 48px) 8px;
-  display:flex; flex-direction:column; gap:clamp(12px, 2.2cqw, 28px);
+/* The discovery screen carries no transcript — the orb is the whole stage. */
+.orb-stage {
+  flex:1; position:relative; z-index:1; min-height:0;
+  display:flex; flex-direction:column;
+  align-items:center; justify-content:center;
+  gap:clamp(18px, 3cqw, 32px);
+  padding:clamp(16px, 3cqw, 40px) clamp(16px, 3.3cqw, 48px);
+}
+.orb-error {
+  font-family:var(--font-display); font-style:italic;
+  font-size:clamp(12px, 1.05cqw, 15px); color:var(--gd-grey-2);
+  text-align:center; max-width:26em;
 }
 
-.chat-bubble-wrap { max-width:84%; animation:rise 0.32s ease-out both; }
-.chat-bubble-wrap.ali  { align-self:flex-start; }
-.chat-bubble-wrap.user { align-self:flex-end; }
-
-/* Figma radii: 25 all round, 5 on the bottom-outer corner (the tail), and 50
-   on the two far corners. On a single-line bubble those two 50s exceed the
-   height, so the browser clamps them to a perfect half-round — which is
-   exactly how the pill-shaped short bubbles in the design are drawn. */
-.chat-bubble {
-  padding:clamp(11px, 1cqw, 14px) clamp(16px, 1.6cqw, 23px);
-  font-family:var(--font-display); font-weight:400;
-  font-size:clamp(14px, 1.15cqw, 16.5px); line-height:1.45;
+/* Visually hidden, still announced — the spoken question reaches screen
+   readers even though nothing is drawn. */
+.gd-sr-only {
+  position:absolute; width:1px; height:1px; padding:0; margin:-1px;
+  overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap; border:0;
 }
-.chat-bubble.ali {
-  background:var(--gd-surface); color:#fff;
-  border-radius:25px 50px 50px 5px;
-}
-.chat-bubble.user {
-  color:#000;
-  border-radius:50px 25px 5px 50px;
-}
-/* The user's three answers take the palette in order, matching the chips they
-   tapped through on the landing screen. */
-.chat-bubble.user.turn-0 { background:var(--gd-terra); }
-.chat-bubble.user.turn-1 { background:var(--gd-sage); }
-.chat-bubble.user.turn-2 { background:var(--gd-steel); }
-.chat-bubble em { font-style:italic; }
-
-.chat-thinking {
-  align-self:flex-start; display:flex; gap:6px;
-  padding:14px 20px; background:var(--gd-surface);
-  border-radius:25px 50px 50px 5px;
-}
-.chat-thinking-dot { width:7px; height:7px; border-radius:50%; background:var(--gd-steel); opacity:0.6; }
 
 /* Progress dots */
 .chat-progress { display:flex; gap:5px; align-items:center; flex-shrink:0; }
@@ -715,6 +690,35 @@ button { font-family: inherit; -webkit-tap-highlight-color: transparent; }
 }
 .era-icon-btn:hover { background:var(--surface2); transform:scale(1.05); }
 .ask-ali-messages { flex:1; overflow-y:auto; padding:16px 20px; display:flex; flex-direction:column; gap:14px; }
+
+/* Chat bubbles now belong to this panel alone — the discovery screen is the
+   wordless orb. Figma radii: 25 all round, 5 on the bottom-outer corner (the
+   tail), 50 on the two far corners; on a single-line bubble the browser clamps
+   those 50s to a half-round, which is how the short pills are drawn. */
+.chat-bubble-wrap { max-width:84%; animation:rise 0.32s ease-out both; }
+.chat-bubble-wrap.ali  { align-self:flex-start; }
+.chat-bubble-wrap.user { align-self:flex-end; }
+.chat-bubble {
+  padding:clamp(11px, 1cqw, 14px) clamp(16px, 1.6cqw, 23px);
+  font-family:var(--font-display); font-weight:400;
+  font-size:clamp(14px, 1.15cqw, 16.5px); line-height:1.45;
+}
+.chat-bubble.ali {
+  background:var(--gd-surface); color:#fff;
+  border-radius:25px 50px 50px 5px;
+}
+.chat-bubble.user {
+  background:var(--gd-steel); color:#000;
+  border-radius:50px 25px 5px 50px;
+}
+.chat-bubble em { font-style:italic; }
+
+.chat-thinking {
+  align-self:flex-start; display:flex; gap:6px;
+  padding:14px 20px; background:var(--gd-surface);
+  border-radius:25px 50px 50px 5px;
+}
+.chat-thinking-dot { width:7px; height:7px; border-radius:50%; background:var(--gd-steel); opacity:0.6; }
 .ask-ali-dock {
   border-top:1px solid var(--line); padding:14px 18px 20px;
   display:flex; flex-direction:column; align-items:center; gap:10px; flex-shrink:0;
@@ -746,6 +750,83 @@ button { font-family: inherit; -webkit-tap-highlight-color: transparent; }
 .morph-ambient {
   position:absolute; left:50%; bottom:7%; transform:translateX(-50%);
   width:min(560px, 92%); opacity:0.40; z-index:0;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   FATHOM ORB — the discovery screen's only subject.
+   `--level` is written every frame from the coach's live waveform
+   (see AudioOrb in page.tsx); everything below is driven off it.
+   Colour morphing is a cross-fade of three stacked layers rather than a
+   gradient transition, which browsers won't interpolate.
+   ═══════════════════════════════════════════════════════════ */
+.fathom-orb {
+  --level:0;
+  position:relative; flex-shrink:0;
+  width:clamp(170px, 33cqw, 330px);
+  aspect-ratio:1; /* height follows width at every breakpoint */
+}
+.fathom-orb-halo,
+.fathom-orb-core,
+.fathom-orb-ring { position:absolute; border-radius:50%; }
+
+/* Bloom — grows and brightens with loudness */
+.fathom-orb-halo {
+  inset:-22%;
+  transform:scale(calc(1 + var(--level) * 0.30));
+  opacity:calc(0.26 + var(--level) * 0.52);
+  filter:blur(38px);
+  transition:transform 60ms linear, opacity 60ms linear;
+}
+
+/* Body — the slow shape morph keeps it liquid rather than a hard sphere */
+.fathom-orb-core {
+  inset:0; overflow:hidden;
+  transform:scale(calc(1 + var(--level) * 0.15));
+  transition:transform 60ms linear;
+  animation:orbWobble 9s ease-in-out infinite;
+}
+
+/* The three palette colours, stacked; only the active one is opaque. Scoped to
+   .orb-layer so it doesn't also capture the shade/gloss spans. */
+.orb-layer {
+  position:absolute; inset:0; display:block;
+  transition:opacity 1000ms ease;
+}
+.fathom-orb-halo .orb-c0 { background:radial-gradient(circle, var(--gd-terra), transparent 64%); }
+.fathom-orb-halo .orb-c1 { background:radial-gradient(circle, var(--gd-sage),  transparent 64%); }
+.fathom-orb-halo .orb-c2 { background:radial-gradient(circle, var(--gd-steel), transparent 64%); }
+.fathom-orb-core .orb-c0 { background:var(--gd-terra); }
+.fathom-orb-core .orb-c1 { background:var(--gd-sage); }
+.fathom-orb-core .orb-c2 { background:var(--gd-steel); }
+
+/* Depth and highlight sit above the colour layers, so they read on all three
+   without needing a per-colour gradient. */
+.fathom-orb-shade {
+  position:absolute; inset:0; display:block;
+  background:linear-gradient(212.68deg,
+    rgba(255,255,255,0.30) 0%, rgba(255,255,255,0) 42%,
+    rgba(10,10,15,0.30) 78%, rgba(10,10,15,0.55) 100%);
+}
+.fathom-orb-gloss {
+  position:absolute; display:block;
+  top:9%; left:14%; width:44%; height:34%; border-radius:50%;
+  background:radial-gradient(circle at 40% 40%, rgba(255,255,255,0.55), transparent 68%);
+  filter:blur(6px);
+  opacity:calc(0.5 + var(--level) * 0.4);
+}
+
+/* Thin shell that only shows on peaks — the visible "beat" of the voice */
+.fathom-orb-ring {
+  inset:-6%; border:1px solid rgba(255,255,255,0.85);
+  opacity:calc(var(--level) * 0.30);
+  transform:scale(calc(1 + var(--level) * 0.10));
+  transition:transform 60ms linear, opacity 60ms linear;
+}
+
+@keyframes orbWobble {
+  0%,100% { border-radius:50% 50% 50% 50% / 50% 50% 50% 50%; }
+  33%     { border-radius:54% 46% 49% 51% / 47% 53% 47% 53%; }
+  66%     { border-radius:46% 54% 52% 48% / 53% 47% 53% 47%; }
 }
 
 /* ═══════════════════════════════════════════════════════════
@@ -814,6 +895,8 @@ body:has(#era-app.mobile-frame) {
 /* ── Reduced motion: calm the staged beats ── */
 @media (prefers-reduced-motion: reduce) {
   .intro-greeting, .intro-subhead, .intro-tagline,
-  .landing-headline, .landing-chips, .landing-sub, .landing-cta-area,
-  .chat-avatar { animation:none !important; }
+  .landing-chips, .landing-sub, .landing-cta-area,
+  .chat-avatar, .fathom-orb-core { animation:none !important; }
+  /* The orb still tracks the voice, but without the scale/shape motion. */
+  .fathom-orb-core, .fathom-orb-halo, .fathom-orb-ring { transform:none !important; }
 }

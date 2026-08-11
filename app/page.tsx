@@ -27,6 +27,36 @@ let audioCtx: AudioContext | null = null;
 let liveSources: AudioBufferSourceNode[] = [];
 let speechToken = 0; // bumped on every new utterance so stale streams self-cancel
 
+// Every playback path is routed through this analyser so the orb can render the
+// coach's actual waveform rather than a canned animation.
+let analyser: AnalyserNode | null = null;
+let analyserData: Uint8Array<ArrayBuffer> | null = null;
+// The Web Speech fallback has no node graph to tap; the orb runs on a synthetic
+// envelope for that path only, so it never freezes mid-sentence.
+let syntheticSpeech = false;
+
+// A smooth, speech-ish envelope in [0,1]. Two detuned sines beat against each
+// other, which reads as syllables rather than a metronome.
+function syntheticEnvelope(): number {
+  const t = (typeof performance !== 'undefined' ? performance.now() : Date.now()) / 1000;
+  const v = Math.abs(Math.sin(t * 6.1)) * 0.6 + Math.abs(Math.sin(t * 2.7)) * 0.4;
+  return Math.min(1, v);
+}
+
+// Current output loudness in [0,1] — RMS of the time-domain buffer.
+function audioLevel(): number {
+  if (syntheticSpeech) return syntheticEnvelope();
+  if (!analyser || !analyserData) return 0;
+  analyser.getByteTimeDomainData(analyserData);
+  let sum = 0;
+  for (let i = 0; i < analyserData.length; i++) {
+    const v = (analyserData[i] - 128) / 128;
+    sum += v * v;
+  }
+  // Speech RMS sits well below 1.0, so scale up before clamping.
+  return Math.min(1, Math.sqrt(sum / analyserData.length) * 3.4);
+}
+
 function primeVoices() {
   if (typeof window === 'undefined' || !('speechSynthesis' in window)) return;
   const load = () => { voiceCache = window.speechSynthesis.getVoices(); };
@@ -43,6 +73,13 @@ function primeAudio() {
       || (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
     if (!Ctor) return;
     audioCtx = audioCtx ?? new Ctor();
+    if (!analyser) {
+      analyser = audioCtx.createAnalyser();
+      analyser.fftSize = 1024;
+      analyser.smoothingTimeConstant = 0.72;
+      analyser.connect(audioCtx.destination);
+      analyserData = new Uint8Array(new ArrayBuffer(analyser.fftSize));
+    }
     if (audioCtx.state === 'suspended') void audioCtx.resume();
   } catch { /* fall back to the <audio> path */ }
 }
@@ -64,6 +101,7 @@ async function prewarmTTS() {
 function stopSpeech() {
   if (typeof window === 'undefined') return;
   speechToken++;
+  syntheticSpeech = false;
   for (const src of liveSources) { try { src.onended = null; src.stop(); } catch { /* already ended */ } }
   liveSources = [];
   if (currentAudio) { currentAudio.pause(); currentAudio = null; }
@@ -102,7 +140,7 @@ async function playPcmStream(res: Response, token: number, onEnd?: () => void) {
     audioBuffer.copyToChannel(samples, 0);
     const src = ctx.createBufferSource();
     src.buffer = audioBuffer;
-    src.connect(ctx.destination);
+    src.connect(analyser ?? ctx.destination);
 
     // 120ms of lead-in absorbs network jitter without a noticeable delay
     playhead = Math.max(playhead, ctx.currentTime + 0.12);
@@ -142,6 +180,11 @@ function speakFallback(text: string) {
     voices.find(v => v.lang.startsWith('en') && v.name.toLowerCase().includes('male')) ||
     voices.find(v => v.lang.startsWith('en'));
   if (preferred) utterance.voice = preferred;
+  // No audio graph on this path — drive the orb from the synthetic envelope.
+  syntheticSpeech = true;
+  const done = () => { syntheticSpeech = false; };
+  utterance.onend = done;
+  utterance.onerror = done;
   window.speechSynthesis.speak(utterance);
 }
 
@@ -185,13 +228,25 @@ async function speak(text: string, onEnd?: () => void) {
     const { audio, mime } = await res.json();
     if (token !== speechToken) return;
     currentAudio = new Audio(`data:${mime || 'audio/ogg'};base64,${audio}`);
+    // Tap this clip into the same analyser so the orb reacts on the fallback
+    // path too. Routing through the graph means the context must be running.
+    primeAudio();
+    if (audioCtx && analyser) {
+      try {
+        if (audioCtx.state === 'suspended') await audioCtx.resume();
+        audioCtx.createMediaElementSource(currentAudio).connect(analyser);
+      } catch { /* untapped — the clip still plays, the orb just breathes */ }
+    }
     currentAudio.addEventListener('ended', () => { _onSpeakEnd?.(); if (onEnd) setTimeout(onEnd, 700); }, { once: true });
     await currentAudio.play();
   } catch {
     if (token !== speechToken) return;
-    _onSpeakEnd?.();
     speakFallback(text);
-    if (onEnd) setTimeout(onEnd, Math.max(2800, text.split(' ').length * 380));
+    // Web Speech gives no reliable end event across browsers, so hold the
+    // speaking state (and the orb's motion) for a word-count estimate.
+    const est = Math.max(2800, text.split(' ').length * 380);
+    setTimeout(() => { if (token === speechToken) _onSpeakEnd?.(); }, est);
+    if (onEnd) setTimeout(onEnd, est);
   }
 }
 
@@ -235,6 +290,64 @@ function CoachOrb({ size, state = 'idle' }: { size: number; state?: 'idle' | 'li
       <div className="ali-orb-halo" style={{ width: haloSize, height: haloSize, top: haloOffset, left: haloOffset, animation: anim }} />
       <div className="ali-orb-core" style={{ animation: anim }} />
       <div className="ali-orb-shine" style={{ inset: size * 0.14 }} />
+    </div>
+  );
+}
+
+// ─── FATHOM ORB ──────────────────────────────────────────────────────────────
+// The discovery screen has no chat transcript — this orb *is* the interface.
+// It breathes with the coach's live waveform and morphs through the three
+// palette colours, one per question, in the order of the landing chips.
+type OrbMode = 'idle' | 'listening' | 'thinking' | 'speaking';
+
+// Matches .fathom-orb-core span order in globals.css — terra → sage → steel.
+const ORB_COLOR_COUNT = 3;
+
+function AudioOrb({ colorIndex, mode }: { colorIndex: number; mode: OrbMode }) {
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    let raf = 0;
+    let smoothed = 0;
+    const tick = () => {
+      raf = requestAnimationFrame(tick);
+      const el = ref.current;
+      if (!el) return;
+
+      const t = performance.now();
+      let target: number;
+      if (mode === 'speaking')       target = audioLevel();
+      else if (mode === 'listening') target = 0.22 + syntheticEnvelope() * 0.42;
+      else if (mode === 'thinking')  target = 0.14 + Math.abs(Math.sin(t / 420)) * 0.14;
+      else                           target = 0.08 + Math.abs(Math.sin(t / 1100)) * 0.06;
+
+      // Attack faster than release — a slow rise reads as lag, a slow fall
+      // reads as resonance, which is what makes it feel tied to the voice.
+      smoothed += (target - smoothed) * (target > smoothed ? 0.38 : 0.11);
+      el.style.setProperty('--level', smoothed.toFixed(3));
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [mode]);
+
+  const active = ((colorIndex % ORB_COLOR_COUNT) + ORB_COLOR_COUNT) % ORB_COLOR_COUNT;
+  const layers = Array.from({ length: ORB_COLOR_COUNT });
+
+  return (
+    <div ref={ref} className={`fathom-orb ${mode}`} aria-hidden="true">
+      <div className="fathom-orb-halo">
+        {layers.map((_, i) => (
+          <span key={i} className={`orb-layer orb-c${i}`} style={{ opacity: i === active ? 1 : 0 }} />
+        ))}
+      </div>
+      <div className="fathom-orb-core">
+        {layers.map((_, i) => (
+          <span key={i} className={`orb-layer orb-c${i}`} style={{ opacity: i === active ? 1 : 0 }} />
+        ))}
+        <span className="fathom-orb-shade" />
+        <span className="fathom-orb-gloss" />
+      </div>
+      <div className="fathom-orb-ring" />
     </div>
   );
 }
@@ -354,15 +467,13 @@ function LandingScreen({ mobileFrame, onToggleFrame, onStart }: {
       </button>
 
       <div className="landing-hero">
-        <h1 className="landing-headline">In five years,</h1>
-
-        {/* The three pastels label the question, then return as the user's
-            chat bubbles in the same order. */}
-        <div className="landing-chips" aria-label="who will you be?">
-          <span className="landing-chip landing-chip-who">who</span>
-          <span className="landing-chip landing-chip-will">will you</span>
-          <span className="landing-chip landing-chip-be">be?</span>
-        </div>
+        {/* The wordmark IS the chip row — the three pastels then return in the
+            same order as the orb's colours, one per question. */}
+        <h1 className="landing-chips">
+          <span className="landing-chip landing-chip-1">Find</span>
+          <span className="landing-chip landing-chip-2">Your</span>
+          <span className="landing-chip landing-chip-3">Fathom</span>
+        </h1>
 
         <p className="landing-sub">
           Tell us your vision, and we&apos;ll show you the vehicle built to take you there.
@@ -371,7 +482,7 @@ function LandingScreen({ mobileFrame, onToggleFrame, onStart }: {
         <div className="landing-cta-area">
           <button className="gd-pill landing-cta" onClick={onStart}>Begin</button>
           <div className="landing-status">
-            Your name and two questions • about 60 seconds
+            Your name and three questions • about 60 seconds
           </div>
         </div>
       </div>
@@ -386,7 +497,6 @@ function ChatScreen({ onComplete, onBack }: {
 }) {
   const { messages, state, reveal, error, sendMessage, startConversation } = useChat();
   const [isListening, setIsListening]   = useState(false);
-  const [interimText, setInterimText]   = useState('');
   const [hasSpeech,   setHasSpeech]     = useState(true);
   const [isSpeaking,  setIsSpeaking]    = useState(false);
   const [textInput,   setTextInput]     = useState('');
@@ -396,7 +506,6 @@ function ChatScreen({ onComplete, onBack }: {
   useEffect(() => { userPausedRef.current = userPaused; }, [userPaused]);
   const recognitionRef = useRef<EventTarget & { start(): void; stop(): void } | null>(null);
   const spokenIds      = useRef<Set<string>>(new Set());
-  const scrollRef      = useRef<HTMLDivElement>(null);
   const started        = useRef(false);
   const handedOff      = useRef(false);
 
@@ -443,10 +552,6 @@ function ChatScreen({ onComplete, onBack }: {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [reveal]);
 
-  useEffect(() => {
-    if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight + 400;
-  }, [messages, state, isListening, interimText]);
-
   const startListening = () => {
     if (state !== 'idle' || isListening) return;
     const SRA = (window as typeof window & { SpeechRecognition?: unknown; webkitSpeechRecognition?: unknown }).SpeechRecognition
@@ -469,21 +574,19 @@ function ChatScreen({ onComplete, onBack }: {
 
     rec.onstart = () => setIsListening(true);
     rec.onspeechstart = () => { speechStarted = true; setTimer(2500); };
+    // Interim results are no longer drawn anywhere — they only keep the
+    // silence timer alive while the user is still mid-sentence.
     rec.onresult = (e: { resultIndex: number; results: SpeechRecognitionResultList }) => {
-      let interim = '';
       for (let i = e.resultIndex; i < e.results.length; i++) {
         if (e.results[i].isFinal) final += e.results[i][0].transcript;
-        else interim += e.results[i][0].transcript;
       }
-      setInterimText(final || interim);
       if (speechStarted) setTimer(2500);
     };
     rec.onspeechend = () => setTimer(2500);
-    rec.onerror = () => { stopTimer(); setIsListening(false); setInterimText(''); };
+    rec.onerror = () => { stopTimer(); setIsListening(false); };
     rec.onend = () => {
       stopTimer();
       setIsListening(false);
-      setInterimText('');
       if (final.trim()) sendMessage(final.trim());
     };
     recognitionRef.current = rec;
@@ -511,17 +614,24 @@ function ChatScreen({ onComplete, onBack }: {
     setTextInput('');
   };
 
-  // Hide the auto-generated kickoff user message (index 0)
-  const visibleMsgs = messages.filter((m, i) => !(m.role === 'user' && i === 0));
-  // Subtract 1 to exclude the hidden kickoff; 3 dots = name + 2 questions
+  // Subtract 1 to exclude the hidden kickoff; 4 dots = name + 3 questions
   const progressCount = Math.max(0, messages.filter(m => m.role === 'user').length - 1);
   const isBusy = state === 'loading' || state === 'revealed';
+  const hasStarted = messages.some(m => m.role === 'assistant');
 
-  // Each user answer takes the next colour in the palette (terra → sage → steel),
-  // matching the order of the who / will you / be? chips on the landing screen.
-  const userTurn = new Map<string, number>();
-  visibleMsgs.filter(m => m.role === 'user').forEach((m, i) => userTurn.set(m.id, i % 3));
-  const nextUserTurn = userTurn.size % 3;
+  // The orb takes the next palette colour per question (terra → sage → steel),
+  // matching the order of the Find / Your / Fathom chips on the landing screen.
+  // The name prompt shares Q1's colour, so each of the three questions gets one.
+  const orbColor = Math.min(2, Math.max(0, progressCount - 1));
+  const orbMode: OrbMode =
+      isBusy      ? 'thinking'
+    : isListening ? 'listening'
+    : isSpeaking  ? 'speaking'
+    : 'idle';
+
+  // Nothing is drawn as text on this screen, so the coach's spoken line is
+  // mirrored to assistive tech instead.
+  const spokenLine = [...messages].reverse().find(m => m.role === 'assistant')?.content ?? '';
 
   return (
     <div className="era-screen chat-screen">
@@ -543,46 +653,19 @@ function ChatScreen({ onComplete, onBack }: {
           </div>
         </div>
         <div className="chat-progress">
-          {Array.from({ length: 3 }).map((_, i) => (
+          {Array.from({ length: 4 }).map((_, i) => (
             <div key={i} className={`chat-progress-dot ${i < progressCount ? 'done' : i === progressCount ? 'active' : 'inactive'}`} />
           ))}
         </div>
       </div>
 
-      <div ref={scrollRef} className="chat-messages">
-        {visibleMsgs.map(m => (
-          <div key={m.id} className={`chat-bubble-wrap ${m.role === 'assistant' ? 'ali' : 'user'}`}>
-            <div className={`chat-bubble ${m.role === 'assistant' ? 'ali' : `user turn-${userTurn.get(m.id) ?? 0}`}`}>{m.content}</div>
-          </div>
-        ))}
+      <div className="orb-stage">
+        <AudioOrb colorIndex={orbColor} mode={orbMode} />
 
-        {isListening && interimText && (
-          <div className="chat-bubble-wrap user" style={{ opacity: 0.55 }}>
-            <div className={`chat-bubble user turn-${nextUserTurn}`}>{interimText}</div>
-          </div>
-        )}
+        {/* Screen readers get the question; the screen itself stays wordless. */}
+        <div className="gd-sr-only" aria-live="polite" aria-atomic="true">{spokenLine}</div>
 
-        {state === 'loading' && (
-          <div className="chat-thinking">
-            {[0, 1, 2].map(i => (
-              <div key={i} className="chat-thinking-dot" style={{ animation: `blink 1.2s ${i * 0.18}s ease-in-out infinite` }} />
-            ))}
-          </div>
-        )}
-
-        {state === 'revealed' && (
-          <div className="chat-bubble-wrap ali">
-            <div className="chat-bubble ali" style={{ fontStyle: 'italic', opacity: 0.85 }}>Bringing it into focus…</div>
-          </div>
-        )}
-
-        {error && (
-          <div className="chat-bubble-wrap ali">
-            <div className="chat-bubble ali" style={{ fontSize: 13, opacity: 0.7 }}>
-              Something went wrong — tap the mic and try again.
-            </div>
-          </div>
-        )}
+        {error && <div className="orb-error">Something went wrong — tap the mic and try again.</div>}
       </div>
 
       <div className="chat-dock" style={{ paddingBottom: 28 }}>
@@ -645,7 +728,7 @@ function ChatScreen({ onComplete, onBack }: {
                 ? 'Bringing it into focus…'
                 : userPaused
                 ? 'Tap to resume'
-                : visibleMsgs.length > 0
+                : hasStarted
                 ? 'Listening will start automatically…'
                 : ''}
             </div>
@@ -727,13 +810,15 @@ function RevealScreen({ reveal, onNext, onRestart }: {
   );
 }
 
-// ─── CAPTURE / SIGN UP SCREEN (Figma 41:398) — email, skippable ───────────────
+// ─── CAPTURE / SIGN UP SCREEN (Figma 41:398) — phone number, skippable ────────
 function CaptureScreen({ onNext, onBack }: {
   onNext: () => void; onBack: () => void;
 }) {
-  const [email, setEmail] = useState('');
+  const [phone, setPhone] = useState('');
   const [status, setStatus] = useState<'idle' | 'sending' | 'error'>('idle');
-  const valid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
+  // Permissive: allow spaces, dashes, parens, a leading +. 10-15 digits.
+  const digits = phone.replace(/\D/g, '');
+  const valid = /^\+?[\d\s().-]+$/.test(phone.trim()) && digits.length >= 10 && digits.length <= 15;
 
   const submit = async () => {
     if (!valid) { setStatus('error'); return; }
@@ -742,7 +827,7 @@ function CaptureScreen({ onNext, onBack }: {
       await fetch('/api/subscribe', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: email.trim() }),
+        body: JSON.stringify({ phone: phone.trim() }),
       });
     } catch { /* stub — proceed regardless */ }
     onNext();
@@ -756,29 +841,30 @@ function CaptureScreen({ onNext, onBack }: {
 
       <div className="capture-inner">
         <div className="capture-label">The reveal is coming</div>
-        <h2 className="capture-title">Be the first to see the vehicle built for this</h2>
+        <h2 className="capture-title">Be the first to see it.</h2>
         <p className="capture-sub">
-          We&apos;ll let you know when there&apos;s more to show. No spam — just the moment it&apos;s ready.
+          Enter your phone number for updates.
         </p>
 
         <div className="capture-field">
           <input
-            type="email"
-            inputMode="email"
-            value={email}
-            onChange={e => { setEmail(e.target.value); if (status === 'error') setStatus('idle'); }}
+            type="tel"
+            inputMode="tel"
+            autoComplete="tel"
+            value={phone}
+            onChange={e => { setPhone(e.target.value); if (status === 'error') setStatus('idle'); }}
             onKeyDown={e => e.key === 'Enter' && submit()}
-            placeholder="you@email.com"
-            aria-label="Email address"
+            placeholder="(555) 123-4567"
+            aria-label="Phone number"
           />
-          {status === 'error' && <div className="capture-error">Please enter a valid email.</div>}
+          {status === 'error' && <div className="capture-error">Please enter a valid phone number.</div>}
         </div>
 
         <div className="capture-ctas">
           <button
             className="gd-pill capture-keep"
             onClick={submit}
-            disabled={status === 'sending' || !email.trim()}
+            disabled={status === 'sending' || !phone.trim()}
           >
             {status === 'sending' ? 'One moment…' : 'Keep me updated'}
           </button>

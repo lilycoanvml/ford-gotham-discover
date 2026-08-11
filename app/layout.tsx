@@ -4,10 +4,10 @@ import './globals.css';
 export const metadata: Metadata = {
   title: 'Discover Your Next You',
   description:
-    'In five years, who will you be? Tell us your vision, and we’ll show you the vehicle built to take you there. A guided moment of self-discovery.',
+    'Find Your Fathom. Tell us your vision, and we’ll show you the vehicle built to take you there. A guided moment of self-discovery.',
   openGraph: {
     title: 'Discover Your Next You',
-    description: 'In five years, who will you be? A guided moment of self-discovery.',
+    description: 'Find Your Fathom — a guided moment of self-discovery.',
     siteName: 'Discover Your Next You',
   },
 };

@@ -501,7 +501,7 @@ function ChatScreen({ onComplete, onBack }: {
   onComplete: (reveal: GothamRevealPayload, discoveryMsgs: { role: 'user' | 'assistant'; content: string }[]) => void;
   onBack: () => void;
 }) {
-  const { messages, state, reveal, error, sendMessage, startConversation } = useChat();
+  const { messages, state, reveal, error, bridging, sendMessage, startConversation } = useChat();
   const [isListening, setIsListening]   = useState(false);
   const [hasSpeech,   setHasSpeech]     = useState(true);
   const [isSpeaking,  setIsSpeaking]    = useState(false);
@@ -514,6 +514,11 @@ function ChatScreen({ onComplete, onBack }: {
   const spokenIds      = useRef<Set<string>>(new Set());
   const started        = useRef(false);
   const handedOff      = useRef(false);
+  // false while a coach line is mid-flight or mid-sentence
+  const speechSettled  = useRef(true);
+  const revealRef      = useRef<GothamRevealPayload | null>(null);
+  const bridgingRef    = useRef(false);
+  const messagesRef    = useRef<typeof messages>([]);
 
   useEffect(() => {
     _onSpeakStart = () => setIsSpeaking(true);
@@ -538,7 +543,14 @@ function ChatScreen({ onComplete, onBack }: {
     if (!last || last.role !== 'assistant') return;
     if (spokenIds.current.has(last.id)) return;
     spokenIds.current.add(last.id);
-    speakParts(last.parts ?? [last.content], () => maybeAutoListen());
+    speechSettled.current = false;
+    speakParts(last.parts ?? [last.content], () => {
+      speechSettled.current = true;
+      // After the final answer this line is the bridge into the reveal, so it
+      // hands over instead of reopening the mic.
+      if (revealRef.current) tryHandoff();
+      else maybeAutoListen();
+    });
   }, [messages]);
 
   // Keep one question ahead: synthesise the next fixed question while the user
@@ -548,16 +560,28 @@ function ChatScreen({ onComplete, onBack }: {
     prefetchSpeech(QUESTIONS[asked]);
   }, [messages]);
 
-  // Hand off to the reveal as soon as the payload arrives (the reveal screen
-  // stages the spotlight + spoken closing message itself).
-  useEffect(() => {
-    if (!reveal || handedOff.current) return;
+  /*
+   * Hand off to the reveal — but never mid-sentence. The final turn speaks a
+   * bridging reaction while the reveal is still generating, so the transition
+   * waits on three things: the payload, the bridge line having arrived, and
+   * Miles having finished saying it. Whichever lands last calls this; the
+   * reveal screen stages the spotlight and its own closing line from there.
+   */
+  revealRef.current = reveal;
+  bridgingRef.current = bridging;
+  messagesRef.current = messages;
+
+  const tryHandoff = () => {
+    if (handedOff.current) return;
+    const payload = revealRef.current;
+    if (!payload) return;
+    if (bridgingRef.current || !speechSettled.current) return;
     handedOff.current = true;
-    // brief resolving beat before transitioning
-    const t = setTimeout(() => onComplete(reveal, messages.map(m => ({ role: m.role, content: m.content }))), 900);
-    return () => clearTimeout(t);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [reveal]);
+    const transcript = messagesRef.current.map(m => ({ role: m.role, content: m.content }));
+    setTimeout(() => onComplete(payload, transcript), 400);
+  };
+
+  useEffect(() => { tryHandoff(); });
 
   const startListening = () => {
     if (state !== 'idle' || isListening) return;

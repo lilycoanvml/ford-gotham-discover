@@ -51,6 +51,9 @@ export function useChat() {
   const [state, setState] = useState<ChatState>('idle');
   const [reveal, setReveal] = useState<GothamRevealPayload | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // True while the final-turn reaction is in flight, so the reveal hand-off
+  // knows to wait for a line that has not arrived yet.
+  const [bridging, setBridging] = useState(false);
   const questionCount = useRef(0);
 
   const addMessage = useCallback((role: 'user' | 'assistant', content: string, parts?: string[]): ChatMessage => {
@@ -84,7 +87,35 @@ export function useChat() {
       // first answer is their name, so answer N is followed by QUESTIONS[N-1].
       const answered = conversationHistory.filter(m => m.role === 'user').length - 1;
       const question: string | undefined = QUESTIONS[answered - 1];
-      const stage = answered >= ANSWERS_BEFORE_REVEAL ? 'reveal' : 'reaction';
+      const isFinal = answered >= ANSWERS_BEFORE_REVEAL;
+      const stage = isFinal ? 'reveal' : 'reaction';
+
+      /*
+       * The reveal takes ~6.5s to generate, and the user spent all of it in
+       * silence after answering. A reaction takes ~1.2s to reach audio, so the
+       * final turn fires both at once: Miles answers them while the reveal is
+       * still being written, and the screen only moves on once he's finished
+       * the sentence (see the hand-off in ChatScreen).
+       */
+      if (isFinal) {
+        setBridging(true);
+        fetch('/api/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ messages: conversationHistory, stage: 'reaction' }),
+        })
+          .then(r => (r.ok ? r.json() : null))
+          .then(d => {
+            const line = String(d?.content ?? '')
+              .replace(/\s+/g, ' ')
+              .replace(/[^.!?]*\?/g, '')   // never leave a dangling question here
+              .replace(/\s+/g, ' ')
+              .trim();
+            if (line) addMessage('assistant', line);
+          })
+          .catch(() => { /* the reveal still lands; we just lose the bridge */ })
+          .finally(() => setBridging(false));
+      }
 
       try {
         const res = await fetch('/api/chat', {
@@ -135,6 +166,7 @@ export function useChat() {
     setState('idle');
     setReveal(null);
     setError(null);
+    setBridging(false);
     questionCount.current = 0;
   }, []);
 
@@ -143,6 +175,7 @@ export function useChat() {
     state,
     reveal,
     error,
+    bridging,
     questionCount: questionCount.current,
     sendMessage,
     startConversation,

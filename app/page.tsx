@@ -353,17 +353,10 @@ const CONFIG_THEME: Record<ConfigId, PlateTheme> = {
   basecamp_explorer:    'cool', // shared expeditions, open country
 };
 
-// Reveal plates are 604x388 loops; the social-card plates are transparent PNGs
-// that let the card's own gradient read through as sky and glow.
-const REVEAL_PLATE: Record<PlateTheme, string> = {
-  warm: '/reveal/truck-sunrise.gif',
-  cool: '/reveal/reveal-cool.gif',
-};
-const CARD_PLATE: Record<PlateTheme, string> = {
-  warm: '/reveal/card-warm.png',
-  cool: '/reveal/plate-cool.png',
-};
-
+// The reveal used to play a 604x388 loop with the vehicle silhouetted against
+// the glow. The vehicle is gone, and the glow it stood in front of was baked
+// into the same frames — so the glow is now drawn in CSS from colours sampled
+// off those loops (see .reveal-glow in globals.css). Nothing to preload.
 const themeFor = (config: ConfigId | null): PlateTheme =>
   config ? CONFIG_THEME[config] : 'warm';
 
@@ -441,12 +434,6 @@ function ChatScreen({ onComplete, onBack }: {
     if (started.current) return;
     started.current = true;
     prewarmTTS();
-    // Warm both reveal plates while the user is still talking — they're heavy
-    // loops and we don't know which theme the reveal will land on yet.
-    for (const src of Object.values(REVEAL_PLATE)) {
-      const preload = new Image();
-      preload.src = src;
-    }
     startConversation();
     const SRA = (window as typeof window & { SpeechRecognition?: unknown; webkitSpeechRecognition?: unknown }).SpeechRecognition
              || (window as typeof window & { webkitSpeechRecognition?: unknown }).webkitSpeechRecognition;
@@ -717,7 +704,7 @@ function RevealScreen({ reveal, onNext, onRestart }: {
         <div className="reveal-hero-stack">
           <h1 className="reveal-config-title">{configTitle}</h1>
           <div className="reveal-hero-art" data-theme={theme}>
-            <img src={REVEAL_PLATE[theme]} alt="" aria-hidden="true" />
+            <div className="reveal-glow" aria-hidden="true" />
           </div>
         </div>
 
@@ -867,10 +854,11 @@ function ShareScreen({ reveal, onRestart, onBack }: {
 
       <div className="share-card-area">
         <div ref={cardRef} className="share-card-outer" data-theme={theme}>
-          {/* Transparent plate over the card gradient; footer band overlays it */}
+          {/* The glow window. It carries no art of its own — it's a rounded
+              cutout that lets the card's gradient read as light, with the
+              wordmark centred on it. Figma 41:335 / 41:361. */}
           <div className="share-card-plate">
-            <img src={CARD_PLATE[theme]} alt="" aria-hidden="true" className="share-card-plate-img" />
-            <img src={UI_FATHOM} alt="" aria-hidden="true" className="share-card-vehicle" />
+            <img src={UI_FATHOM} alt="" aria-hidden="true" className="share-card-wordmark" />
           </div>
 
           <div className="share-card-inner">

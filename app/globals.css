@@ -364,15 +364,28 @@ button { font-family: inherit; -webkit-tap-highlight-color: transparent; }
   overflow-wrap:break-word;
 }
 .reveal-hero-art { position:relative; width:100%; aspect-ratio:604 / 388; overflow:hidden; }
-.reveal-hero-art img {
-  position:absolute; inset:0; width:100%; height:100%; display:block;
-  object-fit:cover;
+
+/* The vehicle silhouette is gone. It used to stand in front of this glow inside
+   the same animated loop, so the glow could not simply be uncovered — these
+   stops are sampled straight off those frames, along the vertical axis above
+   the roofline where nothing occluded them. Centre and radii come from where
+   the loop's glow core landed inside the 604x388 window. */
+.reveal-glow { position:absolute; inset:0; display:block; }
+.reveal-hero-art[data-theme="warm"] .reveal-glow {
+  background:radial-gradient(ellipse 52% 88% at 50% 68%,
+    #BF7353 0%, #A66D56 6%, #966756 12%, #755C55 20%, #575152 30%,
+    #313C49 42%, #142834 55%, #081018 70%, #020408 85%, #000000 100%);
 }
-/* The warm plate is a 1:1 export, so it needs the Figma crop (h 155.66%, top
-   -17.01% of the 388px window). The cool plate was exported at 1196x764 — the
-   604/388 box's own aspect — so it fits with no crop. */
-.reveal-hero-art[data-theme="warm"] img { object-position:50% 30.5%; }
-.reveal-hero-art[data-theme="cool"] img { object-position:50% 50%; }
+.reveal-hero-art[data-theme="cool"] .reveal-glow {
+  background:radial-gradient(ellipse 52% 88% at 50% 62%,
+    #598995 0%, #57848A 6%, #557D82 12%, #527473 20%, #4C695D 30%,
+    #45594C 42%, #384538 55%, #283024 70%, #181C14 82%, #000000 100%);
+}
+/* The loop breathed; this keeps that without the 4MB of frames. */
+@keyframes revealGlowBreathe {
+  0%,100% { transform:scale(1);    opacity:1; }
+  50%     { transform:scale(1.05); opacity:0.92; }
+}
 
 .reveal-copy {
   display:flex; flex-direction:column; align-items:center;
@@ -396,7 +409,12 @@ button { font-family: inherit; -webkit-tap-highlight-color: transparent; }
    failed to land would leave the card blank. */
 @keyframes revealPlateIn { from { opacity:0; transform:scale(1.025); } to { opacity:1; transform:none; } }
 @media (prefers-reduced-motion: no-preference) {
-  .reveal-hero-art img { animation: revealPlateIn 1.1s ease-out both 0.70s; }
+  /* Resolve in, then hand off to the breathing loop at 1.8s. Both animate
+     transform, so the second must come last in the list to win once it starts. */
+  .reveal-glow {
+    animation: revealPlateIn 1.1s ease-out both 0.70s,
+               revealGlowBreathe 7s ease-in-out 1.8s infinite;
+  }
   .reveal-config-title { animation: fadeUp 0.7s ease-out both 0.85s; }
   .reveal-copy         { animation: fadeUp 0.7s ease-out both 1.12s; }
 }
@@ -515,22 +533,20 @@ button { font-family: inherit; -webkit-tap-highlight-color: transparent; }
   font-size:7.52cqw; line-height:1.2;                       /* 28.8 */
 }
 
-/* Plate: 321.12 x 240.48, inset 30.96 each side, bottom flush with the card.
-   `object-fit:fill` because the PNG's aspect already matches the box — any
-   cover-crop would clip the vehicle. */
+/* Glow window: 321.12 x 240.48, inset 30.96 each side, bottom flush with the
+   card. It holds no art now that the vehicle is gone — the card's own gradient
+   reads straight through it, and the wordmark centres on the brightest part. */
 .share-card-plate {
   position:absolute; left:8.08cqw; right:8.08cqw; bottom:0; z-index:0;
   height:40.93%;                 /* 240.48 of 587.52 */
   border-radius:9.4cqw; overflow:hidden;
 }
-.share-card-plate-img { width:100%; height:100%; object-fit:fill; display:block; }
-/* Figma 41:333 wraps the cool plate in rotate(180) scaleY(-1) — a horizontal
-   mirror, so the bikes sit on the leading side. The warm card (41:334) has no
-   such transform. */
-.share-card-outer[data-theme="cool"] .share-card-plate-img { transform:scaleX(-1); }
-/* Vehicle lockup, 196x8 at 11.5% down the plate */
-.share-card-vehicle {
-  position:absolute; top:11.5%; left:50%; transform:translateX(-50%); z-index:1;
+/* FATHOM lockup, 196 wide. It sat at 11.5% down the plate to clear the vehicle
+   roofline; with the vehicle gone it centres on the glow — 71.9% down the card
+   in 41:335/41:361, which is 31.3% into a plate starting at 59.07%.
+   Percentage margins resolve against width, so this is positioned, not nudged. */
+.share-card-wordmark {
+  position:absolute; top:31.3%; left:50%; transform:translate(-50%, -50%);
   width:51.17cqw; height:auto; display:block;
 }
 .share-card-footer {

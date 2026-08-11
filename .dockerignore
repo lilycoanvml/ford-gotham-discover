@@ -12,5 +12,8 @@ next-env.d.ts
 README.md
 docs/
 tests/
+# Design reference only. Anything under public/ is served as a static asset, so
+# leaving these in would publish the component source at /ui/orbReference/*.
+public/ui/orbReference
 Dockerfile
 .dockerignore

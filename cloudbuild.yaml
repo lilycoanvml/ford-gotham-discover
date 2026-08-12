@@ -27,13 +27,22 @@ steps:
       - --port=8080
       - --memory=512Mi
       - --cpu=1
+      # A WebSocket counts as one long request; the default 300s would sever a
+      # session that idles mid-conversation.
+      - --timeout=900
+      # Keeps a browser's HTTP and WS traffic on one instance.
+      - --session-affinity
       - --set-secrets=GEMINI_API_KEY=gemini-api-key:latest
-      - --set-env-vars=GEMINI_MODEL=gemini-3.6-flash,GEMINI_REACTION_MODEL=gemini-3.5-flash-lite,GEMINI_TTS_MODEL=gemini-3.1-flash-live-preview,GEMINI_TTS_VOICE=Charon
+      - --set-env-vars=GEMINI_MODEL=gemini-3.6-flash,GEMINI_REACTION_MODEL=gemini-3.5-flash-lite,GEMINI_LIVE_MODEL=gemini-3.1-flash-live-preview,GEMINI_TTS_MODEL=gemini-3.1-flash-live-preview,GEMINI_TTS_VOICE=Charon
 
 substitutions:
   _SERVICE_NAME: ford-gotham-discover
   _REGION: us-central1
-  _IMAGE_URL: us-central1-docker.pkg.dev/$PROJECT_ID/ford-gotham-discover/app:$SHORT_SHA
+  # $SHORT_SHA is only populated by build triggers, not by `gcloud builds
+  # submit`, which would leave the tag dangling on a manual deploy. _TAG is
+  # overridable so a manual run can still pin a specific image.
+  _TAG: latest
+  _IMAGE_URL: us-central1-docker.pkg.dev/$PROJECT_ID/ford-gotham-discover/app:$_TAG
 
 images:
   - '$_IMAGE_URL'

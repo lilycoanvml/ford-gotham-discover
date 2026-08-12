@@ -57,9 +57,19 @@ gcloud run deploy "$SERVICE_NAME" \
   --cpu=1 \
   --min-instances=0 \
   --max-instances=10 \
+  --timeout=900 \
+  --session-affinity \
   --set-secrets="GEMINI_API_KEY=gemini-api-key:latest" \
-  --set-env-vars="GEMINI_MODEL=gemini-3.6-flash,GEMINI_REACTION_MODEL=gemini-3.5-flash-lite,GEMINI_TTS_MODEL=gemini-3.1-flash-live-preview,GEMINI_TTS_VOICE=Charon" \
+  --set-env-vars="GEMINI_MODEL=gemini-3.6-flash,GEMINI_REACTION_MODEL=gemini-3.5-flash-lite,GEMINI_LIVE_MODEL=gemini-3.1-flash-live-preview,GEMINI_TTS_MODEL=gemini-3.1-flash-live-preview,GEMINI_TTS_VOICE=Charon" \
   --project="$PROJECT_ID"
+
+# --timeout=900       a WebSocket counts as one long request; the default 300s
+#                     would sever a session that idles mid-conversation.
+# --session-affinity  keeps a browser's HTTP and WS traffic on one instance.
+#
+# --min-instances=0 is left as-is to keep idle cost at zero, but a cold start
+# has to boot the gateway AND Next before the relay's 10s setup timeout. If the
+# first visitor of the day sees the orb fail, raise this to 1.
 
 echo ""
 echo "✓ Deployed. Service URL:"

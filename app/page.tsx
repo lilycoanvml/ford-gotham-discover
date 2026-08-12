@@ -1,12 +1,15 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { useChat } from '@/app/frontend/hooks/useChat';
-import type { GothamRevealPayload, ConfigId } from '@/app/frontend/hooks/useChat';
+import type { GothamRevealPayload, ConfigId } from '@/app/frontend/types/conversation';
+import { useLiveSession } from '@/app/frontend/hooks/useLiveSession';
 import { CONFIG_LABELS } from '@/app/theme/ford-brand';
 import AudioOrb from '@/app/frontend/components/AudioOrb';
 import type { OrbMode } from '@/app/frontend/components/AudioOrb';
-import { QUESTIONS } from '@/app/lib/script';
+import {
+  audioLevel, micLevel, syntheticEnvelope, primeAudio, primeVoices, prewarmTTS,
+  speak, stopSpeech,
+} from '@/app/frontend/lib/audio';
 
 // ─── TYPES ───────────────────────────────────────────────────────────────────
 type Screen = 'landing' | 'chat' | 'reveal' | 'capture' | 'share';
@@ -20,179 +23,8 @@ function safeConfig(id: string | undefined): ConfigId | null {
 }
 
 // ─── TTS ─────────────────────────────────────────────────────────────────────
-let voiceCache: SpeechSynthesisVoice[] = [];
-let currentAudio: HTMLAudioElement | null = null;
-
-// Web Audio is used for the streaming Gemini path: the coach's line arrives as
-// raw PCM chunks and each is scheduled back-to-back so playback starts ~750ms
-// in rather than waiting out the whole ~10s generation.
-let audioCtx: AudioContext | null = null;
-let liveSources: AudioBufferSourceNode[] = [];
-let speechToken = 0; // bumped on every new utterance so stale streams self-cancel
-
-// Every playback path is routed through this analyser so the orb can render the
-// coach's actual waveform rather than a canned animation.
-let analyser: AnalyserNode | null = null;
-let analyserData: Uint8Array<ArrayBuffer> | null = null;
-// The Web Speech fallback has no node graph to tap; the orb runs on a synthetic
-// envelope for that path only, so it never freezes mid-sentence.
-let syntheticSpeech = false;
-
-// A smooth, speech-ish envelope in [0,1]. Two detuned sines beat against each
-// other, which reads as syllables rather than a metronome.
-function syntheticEnvelope(): number {
-  const t = (typeof performance !== 'undefined' ? performance.now() : Date.now()) / 1000;
-  const v = Math.abs(Math.sin(t * 6.1)) * 0.6 + Math.abs(Math.sin(t * 2.7)) * 0.4;
-  return Math.min(1, v);
-}
-
-// Current output loudness in [0,1] — RMS of the time-domain buffer.
-function audioLevel(): number {
-  if (syntheticSpeech) return syntheticEnvelope();
-  if (!analyser || !analyserData) return 0;
-  analyser.getByteTimeDomainData(analyserData);
-  let sum = 0;
-  for (let i = 0; i < analyserData.length; i++) {
-    const v = (analyserData[i] - 128) / 128;
-    sum += v * v;
-  }
-  // Speech RMS sits well below 1.0, so scale up before clamping.
-  return Math.min(1, Math.sqrt(sum / analyserData.length) * 3.4);
-}
-
-function primeVoices() {
-  if (typeof window === 'undefined' || !('speechSynthesis' in window)) return;
-  const load = () => { voiceCache = window.speechSynthesis.getVoices(); };
-  load();
-  window.speechSynthesis.addEventListener('voiceschanged', load);
-}
-
-// Create/resume the AudioContext from inside a real tap — iOS Safari will not
-// start one otherwise, and every later coach line depends on it.
-function primeAudio() {
-  if (typeof window === 'undefined') return;
-  try {
-    const Ctor = window.AudioContext
-      || (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
-    if (!Ctor) return;
-    audioCtx = audioCtx ?? new Ctor();
-    if (!analyser) {
-      analyser = audioCtx.createAnalyser();
-      analyser.fftSize = 1024;
-      analyser.smoothingTimeConstant = 0.72;
-      analyser.connect(audioCtx.destination);
-      analyserData = new Uint8Array(new ArrayBuffer(analyser.fftSize));
-    }
-    if (audioCtx.state === 'suspended') void audioCtx.resume();
-  } catch { /* fall back to the <audio> path */ }
-}
-
-// Warm up the TTS endpoint so the first real call isn't slowed by cold start.
-async function prewarmTTS() {
-  if (typeof window === 'undefined') return;
-  try {
-    fetch('/api/tts', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ warm: true }),
-      keepalive: true,
-    });
-  } catch { /* silent — best-effort */ }
-}
-
-// Stop every playback path at once: streamed PCM, <audio> element, Web Speech.
-function stopSpeech() {
-  if (typeof window === 'undefined') return;
-  speechToken++;
-  syntheticSpeech = false;
-  for (const src of liveSources) { try { src.onended = null; src.stop(); } catch { /* already ended */ } }
-  liveSources = [];
-  if (currentAudio) { currentAudio.pause(); currentAudio = null; }
-  window.speechSynthesis?.cancel();
-}
-
-// Play a streamed 16-bit little-endian PCM body, scheduling chunks as they land.
-// Resolves when the last chunk finishes; firing the end-of-turn callbacks is
-// speakParts' job, since a turn can be several segments long.
-async function playPcmStream(res: Response, token: number) {
-  primeAudio();
-  const ctx = audioCtx;
-  if (!ctx || !res.body) throw new Error('Web Audio unavailable');
-  if (ctx.state === 'suspended') await ctx.resume();
-
-  const rate = Number(res.headers.get('X-Audio-Rate')) || 24000;
-  const reader = res.body.getReader();
-  let playhead = 0;
-  let tail: AudioBufferSourceNode | null = null;
-  let carry = new Uint8Array(0); // odd trailing byte of a chunk waits for the next
-
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    if (token !== speechToken) { await reader.cancel(); return; } // interrupted
-
-    // Stitch the carried byte onto this chunk, then keep a whole number of samples
-    const buf = carry.length ? new Uint8Array([...carry, ...value]) : value;
-    const usable = buf.length - (buf.length % 2);
-    carry = usable === buf.length ? new Uint8Array(0) : buf.subarray(usable);
-    if (!usable) continue;
-
-    const view = new DataView(buf.buffer, buf.byteOffset, usable);
-    const samples = new Float32Array(usable / 2);
-    for (let i = 0; i < samples.length; i++) samples[i] = view.getInt16(i * 2, true) / 32768;
-
-    const audioBuffer = ctx.createBuffer(1, samples.length, rate);
-    audioBuffer.copyToChannel(samples, 0);
-    const src = ctx.createBufferSource();
-    src.buffer = audioBuffer;
-    src.connect(analyser ?? ctx.destination);
-
-    // 120ms of lead-in absorbs network jitter without a noticeable delay
-    playhead = Math.max(playhead, ctx.currentTime + 0.12);
-    src.start(playhead);
-    playhead += audioBuffer.duration;
-
-    liveSources.push(src);
-    src.onended = () => { liveSources = liveSources.filter(s => s !== src); };
-    tail = src;
-  }
-
-  if (token !== speechToken) return;
-  if (!tail) throw new Error('no audio in stream');
-
-  // The last scheduled chunk finishing is the end of the utterance
-  await new Promise<void>(resolve => {
-    tail!.onended = () => { liveSources = liveSources.filter(s => s !== tail); resolve(); };
-  });
-}
-
-// Web Speech API fallback (used when GCP TTS route is unavailable locally)
-function speakFallback(text: string) {
-  if (typeof window === 'undefined' || !('speechSynthesis' in window)) return;
-  window.speechSynthesis.cancel();
-  const utterance = new SpeechSynthesisUtterance(text);
-  // Warm, grounded male delivery to match the Cloud TTS "Charon" voice.
-  utterance.rate = 1.05; utterance.pitch = 0.92; utterance.volume = 1;
-  const voices = voiceCache.length > 0 ? voiceCache : window.speechSynthesis.getVoices();
-  const preferred =
-    voices.find(v => v.name === 'Google UK English Male')   ||
-    voices.find(v => v.name === 'Daniel')                   ||
-    voices.find(v => v.name === 'Alex')                     ||
-    voices.find(v => v.name === 'Fred')                     ||
-    voices.find(v => v.lang.startsWith('en') && v.name.toLowerCase().includes('male')) ||
-    voices.find(v => v.lang.startsWith('en'));
-  if (preferred) utterance.voice = preferred;
-  // No audio graph on this path — drive the orb from the synthetic envelope.
-  syntheticSpeech = true;
-  const done = () => { syntheticSpeech = false; };
-  utterance.onend = done;
-  utterance.onerror = done;
-  window.speechSynthesis.speak(utterance);
-}
-
-// Module-level callbacks so screens can show speaking state on the orb
-let _onSpeakStart: (() => void) | null = null;
-let _onSpeakEnd: (() => void) | null = null;
+// The audio engine (context, analyser, clip cache, PCM playback) moved to
+// app/frontend/lib/audio.ts so the live session can share the same graph.
 
 // Sanitize closingMessage — Gemini occasionally returns template text instead of
 // actual content (square-bracket instructions). Strip it to a safe fallback.
@@ -203,145 +35,6 @@ function sanitizeClosingMsg(msg: string): string {
   return msg.replace(/\[.*?\]/g, '').trim() || "Take a look at who you're becoming.";
 }
 
-/*
- * Speech cache. The three questions never change, so their audio is fetched
- * during the previous turn and played from memory — the expensive part of a
- * turn (synthesising ~10s of speech) stops being on the critical path, and only
- * the short reaction is generated live.
- */
-type Clip = { samples: Float32Array<ArrayBuffer>; rate: number };
-const ttsCache = new Map<string, Clip>();
-const ttsInflight = new Map<string, Promise<void>>();
-
-/*
- * How long the mic keeps listening after the user stops making sound before
- * Miles takes his turn. Natural turn-taking gaps run ~200ms; this was 2500ms,
- * which was the single largest slice of dead air in the loop.
- */
-const SILENCE_MS = 1000;
-
-// How long after Miles stops before the mic reopens. Was 700ms + a 250ms
-// hand-off; conversational gaps are far shorter than that.
-const POST_SPEECH_MS = 250;
-
-function decodePcm(buf: ArrayBuffer): Float32Array<ArrayBuffer> {
-  const view = new DataView(buf);
-  const out = new Float32Array(new ArrayBuffer(Math.floor(buf.byteLength / 2) * 4));
-  for (let i = 0; i < out.length; i++) out[i] = view.getInt16(i * 2, true) / 32768;
-  return out;
-}
-
-async function fetchTTS(text: string): Promise<Response> {
-  return fetch('/api/tts', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ text }),
-  });
-}
-
-/** Synthesise ahead of time and hold it. Idempotent; failures are silent. */
-function prefetchSpeech(text?: string) {
-  if (typeof window === 'undefined') return;
-  if (!text || ttsCache.has(text) || ttsInflight.has(text)) return;
-  const job = (async () => {
-    const res = await fetchTTS(text);
-    if (!res.ok) throw new Error('prefetch failed');
-    // Only the streaming Gemini path is cacheable; the Cloud TTS fallback
-    // returns a whole clip that the live path already handles fine.
-    if (!res.headers.get('Content-Type')?.startsWith('audio/')) return;
-    const rate = Number(res.headers.get('X-Audio-Rate')) || 24000;
-    ttsCache.set(text, { samples: decodePcm(await res.arrayBuffer()), rate });
-  })().catch(() => { /* fall back to live synthesis at play time */ })
-    .finally(() => { ttsInflight.delete(text); });
-  ttsInflight.set(text, job);
-}
-
-/** Play an already-synthesised clip. Resolves when it finishes. */
-async function playClip(clip: Clip, token: number): Promise<void> {
-  primeAudio();
-  const ctx = audioCtx;
-  if (!ctx) throw new Error('Web Audio unavailable');
-  if (ctx.state === 'suspended') await ctx.resume();
-
-  const buffer = ctx.createBuffer(1, clip.samples.length, clip.rate);
-  buffer.copyToChannel(clip.samples, 0);
-  const src = ctx.createBufferSource();
-  src.buffer = buffer;
-  src.connect(analyser ?? ctx.destination);
-  src.start(ctx.currentTime + 0.02);
-  liveSources.push(src);
-
-  await new Promise<void>(resolve => {
-    src.onended = () => { liveSources = liveSources.filter(s => s !== src); resolve(); };
-  });
-  if (token !== speechToken) return;
-}
-
-/** Cloud TTS fallback shape: one complete clip through an <audio> element. */
-async function playJsonClip(res: Response, token: number): Promise<void> {
-  const { audio, mime } = await res.json();
-  if (token !== speechToken) return;
-  const el = new Audio(`data:${mime || 'audio/ogg'};base64,${audio}`);
-  currentAudio = el;
-  // Tap into the same analyser so the orb reacts on this path too.
-  primeAudio();
-  if (audioCtx && analyser) {
-    try {
-      if (audioCtx.state === 'suspended') await audioCtx.resume();
-      audioCtx.createMediaElementSource(el).connect(analyser);
-    } catch { /* untapped — the clip still plays, the orb just breathes */ }
-  }
-  const done = new Promise<void>(resolve => {
-    el.addEventListener('ended', () => resolve(), { once: true });
-  });
-  await el.play();
-  await done;
-}
-
-/*
- * Speak a turn, one segment at a time. A reaction+question turn is two
- * segments: the reaction is synthesised live, the question comes straight out
- * of the cache, so it lands right behind it with only a scheduling gap — which
- * reads as the natural beat between a remark and a question.
- */
-async function speakParts(parts: string[], onEnd?: () => void) {
-  if (typeof window === 'undefined') return;
-  stopSpeech();
-  const token = speechToken;
-  _onSpeakStart?.();
-
-  const segments = parts.map(p => p?.trim()).filter(Boolean) as string[];
-  try {
-    for (const segment of segments) {
-      if (token !== speechToken) return;
-
-      const inflight = ttsInflight.get(segment);
-      if (inflight) await inflight;           // prefetch still landing — ride it
-      const cached = ttsCache.get(segment);
-      if (cached) { await playClip(cached, token); continue; }
-
-      const res = await fetchTTS(segment);
-      if (!res.ok) throw new Error('TTS unavailable');
-      if (token !== speechToken) return;
-      if (res.headers.get('Content-Type')?.startsWith('audio/')) await playPcmStream(res, token);
-      else await playJsonClip(res, token);
-    }
-    if (token !== speechToken) return;
-    _onSpeakEnd?.();
-    if (onEnd) setTimeout(onEnd, POST_SPEECH_MS);
-  } catch {
-    if (token !== speechToken) return;
-    const text = segments.join(' ');
-    speakFallback(text);
-    // Web Speech gives no reliable end event across browsers, so hold the
-    // speaking state (and the orb's motion) for a word-count estimate.
-    const est = Math.max(2800, text.split(' ').length * 380);
-    setTimeout(() => { if (token === speechToken) _onSpeakEnd?.(); }, est);
-    if (onEnd) setTimeout(onEnd, est);
-  }
-}
-
-const speak = (text: string, onEnd?: () => void) => speakParts([text], onEnd);
 
 // ─── ICONS ───────────────────────────────────────────────────────────────────
 function MicIcon({ size = 22, color = 'currentColor' }: { size?: number; color?: string }) {
@@ -376,7 +69,13 @@ function SendIcon({ size = 18, color = 'currentColor' }: { size?: number; color?
 function levelForMode(mode: OrbMode): number {
   const t = performance.now();
   if (mode === 'speaking')  return audioLevel();
-  if (mode === 'listening') return 0.22 + syntheticEnvelope() * 0.42;
+  // The live session owns the mic, so this is the user's real voice. It falls
+  // back to the synthetic envelope before the stream exists (and on the typed
+  // path), so the orb never freezes.
+  if (mode === 'listening') {
+    const mic = micLevel();
+    return mic === null ? 0.22 + syntheticEnvelope() * 0.42 : 0.18 + mic * 0.62;
+  }
   if (mode === 'thinking')  return 0.14 + Math.abs(Math.sin(t / 420)) * 0.14;
   return 0.08 + Math.abs(Math.sin(t / 1100)) * 0.06;
 }
@@ -479,158 +178,50 @@ function LandingScreen({ mobileFrame, onToggleFrame, onStart }: {
 }
 
 // ─── CHAT SCREEN ─────────────────────────────────────────────────────────────
+/*
+ * The conversation is one continuous audio session now (useLiveSession), so
+ * this screen no longer drives turn-taking — it reflects it. Miles hears the
+ * user directly and Gemini's own VAD decides when a turn ends; there is no
+ * speech-recognition object, no silence timer, and no auto-listen handoff to
+ * schedule. What is left here is the mic gate, the typed fallback, and the orb.
+ */
 function ChatScreen({ onComplete, onBack }: {
   onComplete: (reveal: GothamRevealPayload, discoveryMsgs: { role: 'user' | 'assistant'; content: string }[]) => void;
   onBack: () => void;
 }) {
-  const { messages, state, reveal, error, bridging, sendMessage, startConversation } = useChat();
-  const [isListening, setIsListening]   = useState(false);
-  const [hasSpeech,   setHasSpeech]     = useState(true);
-  const [isSpeaking,  setIsSpeaking]    = useState(false);
-  const [textInput,   setTextInput]     = useState('');
-  const [inputMode,   setInputMode]     = useState<'voice' | 'text'>('voice');
-  const [userPaused,  setUserPaused]    = useState(false);
-  const userPausedRef = useRef(false);
-  useEffect(() => { userPausedRef.current = userPaused; }, [userPaused]);
-  const recognitionRef = useRef<EventTarget & { start(): void; stop(): void } | null>(null);
-  const spokenIds      = useRef<Set<string>>(new Set());
-  const started        = useRef(false);
-  const handedOff      = useRef(false);
-  // false while a coach line is mid-flight or mid-sentence
-  const speechSettled  = useRef(true);
-  const revealRef      = useRef<GothamRevealPayload | null>(null);
-  const bridgingRef    = useRef(false);
-  const messagesRef    = useRef<typeof messages>([]);
+  const {
+    phase, messages, answers, error, degraded,
+    start, stop, sendText, bargeIn,
+  } = useLiveSession({ onComplete });
 
-  useEffect(() => {
-    _onSpeakStart = () => setIsSpeaking(true);
-    _onSpeakEnd   = () => setIsSpeaking(false);
-    return () => { _onSpeakStart = null; _onSpeakEnd = null; };
-  }, []);
+  const [textInput, setTextInput] = useState('');
+  const [inputMode, setInputMode] = useState<'voice' | 'text'>('voice');
+  const started = useRef(false);
 
   useEffect(() => {
     if (started.current) return;
     started.current = true;
     prewarmTTS();
-    startConversation();
-    const SRA = (window as typeof window & { SpeechRecognition?: unknown; webkitSpeechRecognition?: unknown }).SpeechRecognition
-             || (window as typeof window & { webkitSpeechRecognition?: unknown }).webkitSpeechRecognition;
-    if (!SRA) { setHasSpeech(false); setInputMode('text'); }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    void start();
+  }, [start]);
 
-  // Speak new coach messages as they arrive
+  // Mic trouble or a dead socket leaves only one way to answer.
   useEffect(() => {
-    const last = messages[messages.length - 1];
-    if (!last || last.role !== 'assistant') return;
-    if (spokenIds.current.has(last.id)) return;
-    spokenIds.current.add(last.id);
-    speechSettled.current = false;
-    speakParts(last.parts ?? [last.content], () => {
-      speechSettled.current = true;
-      // After the final answer this line is the bridge into the reveal, so it
-      // hands over instead of reopening the mic.
-      if (revealRef.current) tryHandoff();
-      else maybeAutoListen();
-    });
-  }, [messages]);
-
-  // Keep one question ahead: synthesise the next fixed question while the user
-  // is still answering the current one, so it plays from memory when it lands.
-  useEffect(() => {
-    const asked = messages.filter(m => m.role === 'assistant' && m.parts).length;
-    prefetchSpeech(QUESTIONS[asked]);
-  }, [messages]);
-
-  /*
-   * Hand off to the reveal — but never mid-sentence. The final turn speaks a
-   * bridging reaction while the reveal is still generating, so the transition
-   * waits on three things: the payload, the bridge line having arrived, and
-   * Miles having finished saying it. Whichever lands last calls this; the
-   * reveal screen stages the spotlight and its own closing line from there.
-   */
-  revealRef.current = reveal;
-  bridgingRef.current = bridging;
-  messagesRef.current = messages;
-
-  const tryHandoff = () => {
-    if (handedOff.current) return;
-    const payload = revealRef.current;
-    if (!payload) return;
-    if (bridgingRef.current || !speechSettled.current) return;
-    handedOff.current = true;
-    const transcript = messagesRef.current.map(m => ({ role: m.role, content: m.content }));
-    setTimeout(() => onComplete(payload, transcript), 400);
-  };
-
-  useEffect(() => { tryHandoff(); });
-
-  const startListening = () => {
-    if (state !== 'idle' || isListening) return;
-    const SRA = (window as typeof window & { SpeechRecognition?: unknown; webkitSpeechRecognition?: unknown }).SpeechRecognition
-             || (window as typeof window & { webkitSpeechRecognition?: unknown }).webkitSpeechRecognition;
-    if (!SRA) return;
-    stopSpeech();
-    setUserPaused(false);
-
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const rec = new (SRA as any)();
-    rec.continuous = true;
-    rec.interimResults = true;
-    rec.lang = 'en-US';
-    let final = '';
-    let silenceTimer: ReturnType<typeof setTimeout> | null = null;
-    let speechStarted = false;
-
-    const stopTimer = () => { if (silenceTimer) { clearTimeout(silenceTimer); silenceTimer = null; } };
-    const setTimer = (ms: number) => { stopTimer(); silenceTimer = setTimeout(() => rec.stop(), ms); };
-
-    rec.onstart = () => setIsListening(true);
-    rec.onspeechstart = () => { speechStarted = true; setTimer(SILENCE_MS); };
-    // Interim results are no longer drawn anywhere — they only keep the
-    // silence timer alive while the user is still mid-sentence.
-    rec.onresult = (e: { resultIndex: number; results: SpeechRecognitionResultList }) => {
-      for (let i = e.resultIndex; i < e.results.length; i++) {
-        if (e.results[i].isFinal) final += e.results[i][0].transcript;
-      }
-      if (speechStarted) setTimer(SILENCE_MS);
-    };
-    rec.onspeechend = () => setTimer(SILENCE_MS);
-    rec.onerror = () => { stopTimer(); setIsListening(false); };
-    rec.onend = () => {
-      stopTimer();
-      setIsListening(false);
-      if (final.trim()) sendMessage(final.trim());
-    };
-    recognitionRef.current = rec;
-    rec.start();
-    setTimer(15000);
-  };
-
-  const stopListening = () => {
-    setUserPaused(true);
-    recognitionRef.current?.stop();
-  };
-
-  const maybeAutoListen = () => {
-    if (userPausedRef.current) return;
-    if (inputMode !== 'voice') return;
-    if (!hasSpeech) return;
-    setTimeout(() => {
-      if (!userPausedRef.current && inputMode === 'voice') startListening();
-    }, 120);
-  };
+    if (degraded) setInputMode('text');
+  }, [degraded]);
 
   const handleTextSend = () => {
-    if (!textInput.trim() || state !== 'idle') return;
-    sendMessage(textInput.trim());
+    if (!textInput.trim()) return;
+    if (phase === 'thinking' || phase === 'revealing') return;
+    sendText(textInput.trim());
     setTextInput('');
   };
 
-  // Subtract 1 to exclude the hidden kickoff; 4 dots = name + 3 questions
-  const progressCount = Math.max(0, messages.filter(m => m.role === 'user').length - 1);
-  const isBusy = state === 'loading' || state === 'revealed';
-  const hasStarted = messages.some(m => m.role === 'assistant');
+  // 4 dots = name + 3 questions
+  const progressCount = Math.min(4, answers);
+  const isSpeaking  = phase === 'speaking';
+  const isListening = phase === 'listening';
+  const isBusy      = phase === 'thinking' || phase === 'revealing' || phase === 'connecting';
 
   // The orb takes the next palette colour per question (terra → sage → steel),
   // matching the order of the Find / Your / Fathom chips on the landing screen.
@@ -649,24 +240,27 @@ function ChatScreen({ onComplete, onBack }: {
   // mirrored to assistive tech instead.
   const spokenLine = [...messages].reverse().find(m => m.role === 'assistant')?.content ?? '';
 
+  const statusLine =
+      phase === 'connecting' ? 'Connecting…'
+    : phase === 'revealing'  ? 'Bringing it into focus…'
+    : phase === 'thinking'   ? 'Thinking…'
+    : isListening            ? 'Listening…'
+    : isSpeaking             ? 'Speaking…'
+    : 'Discover Your Next You';
+
   return (
     <div className="era-screen chat-screen">
       <div className="chat-header">
-        <BackButton onClick={onBack} />
+        <BackButton onClick={() => { stop(); onBack(); }} />
         <div className={`chat-avatar${
-          state === 'loading' ? ' thinking'
+          isBusy ? ' thinking'
           : isListening ? ' listening'
           : isSpeaking ? ' speaking'
           : ''
         }`} />
         <div style={{ flex: 1, minWidth: 0 }}>
           <div className="chat-ali-label">Miles</div>
-          <div className="chat-ali-sub">
-            {state === 'loading' ? 'Thinking…'
-             : isListening ? 'Listening…'
-             : isSpeaking ? 'Speaking…'
-             : 'Discover Your Next You'}
-          </div>
+          <div className="chat-ali-sub">{statusLine}</div>
         </div>
         <div className="chat-progress">
           {Array.from({ length: 4 }).map((_, i) => (
@@ -681,18 +275,17 @@ function ChatScreen({ onComplete, onBack }: {
         {/* Screen readers get the question; the screen itself stays wordless. */}
         <div className="gd-sr-only" aria-live="polite" aria-atomic="true">{spokenLine}</div>
 
-        {error && <div className="orb-error">Something went wrong — tap the mic and try again.</div>}
+        {error && <div className="orb-error">{error}</div>}
       </div>
 
       <div className="chat-dock" style={{ paddingBottom: 28 }}>
         {isListening && inputMode === 'voice' && <Waveform />}
 
-        {hasSpeech && (
+        {!degraded && (
           <div className="input-mode-toggle">
             <button
               className={`input-mode-btn${inputMode === 'voice' ? ' active' : ''}`}
-              onClick={() => { setInputMode('voice'); setUserPaused(false); }}
-              disabled={isBusy || isListening}
+              onClick={() => setInputMode('voice')}
               aria-label="Use voice"
             >
               <MicIcon size={14} color="currentColor" />
@@ -700,8 +293,7 @@ function ChatScreen({ onComplete, onBack }: {
             </button>
             <button
               className={`input-mode-btn${inputMode === 'text' ? ' active' : ''}`}
-              onClick={() => { setInputMode('text'); if (isListening) stopListening(); }}
-              disabled={isBusy}
+              onClick={() => setInputMode('text')}
               aria-label="Type your response"
             >
               <KeyboardIcon size={14} color="currentColor" />
@@ -710,42 +302,40 @@ function ChatScreen({ onComplete, onBack }: {
           </div>
         )}
 
-        {inputMode === 'voice' && hasSpeech ? (
+        {inputMode === 'voice' && !degraded ? (
           <>
+            {/*
+              * The mic is always open while Miles is quiet — the model decides
+              * when a turn ends, so there is nothing to start. The button is
+              * how the user cuts him off mid-sentence instead.
+              */}
             <button
-              onClick={isListening ? stopListening : startListening}
-              disabled={isBusy}
-              aria-label={isListening ? 'Stop listening' : 'Start speaking'}
+              onClick={bargeIn}
+              disabled={!isSpeaking}
+              aria-label={isSpeaking ? 'Interrupt Miles' : 'Listening'}
               style={{
                 width: 74, height: 74, borderRadius: '50%', border: 'none',
-                cursor: isBusy ? 'default' : 'pointer',
+                cursor: isSpeaking ? 'pointer' : 'default',
                 background: isListening ? 'var(--accent)' : isBusy ? 'var(--card)' : 'var(--ink)',
                 display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative',
-                boxShadow: !isListening && !isBusy ? '0 6px 24px var(--shadow)' : 'none',
+                boxShadow: isListening ? 'none' : '0 6px 24px var(--shadow)',
                 transform: isListening ? 'scale(0.94)' : 'scale(1)',
                 transition: 'all 0.3s',
                 opacity: isBusy ? 0.45 : 1,
                 flexShrink: 0,
               }}
             >
-              {!isListening && !isBusy && (
+              {isListening && (
                 <span style={{ position: 'absolute', inset: -7, borderRadius: '50%', border: '2px solid var(--accent)', opacity: 0.4, animation: 'ring 2s ease-out infinite' }} />
               )}
               <MicIcon size={28} color={isBusy ? 'var(--ink-soft)' : '#fff'} />
             </button>
             <div className="chat-dock-hint">
-              {isListening
-                ? 'Listening… tap to pause'
-                : isSpeaking
-                ? 'Miles is talking…'
-                : state === 'loading'
-                ? 'Thinking…'
-                : state === 'revealed'
-                ? 'Bringing it into focus…'
-                : userPaused
-                ? 'Tap to resume'
-                : hasStarted
-                ? 'Listening will start automatically…'
+              {phase === 'connecting' ? 'Getting Miles on the line…'
+                : isListening ? 'Listening — just talk'
+                : isSpeaking ? 'Miles is talking — tap to jump in'
+                : phase === 'thinking' ? 'Thinking…'
+                : phase === 'revealing' ? 'Bringing it into focus…'
                 : ''}
             </div>
           </>

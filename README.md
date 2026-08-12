@@ -117,8 +117,10 @@ Caps labels are tracked `0.32em` (4.8px at 15px) throughout.
    and a steel `BEGIN` pill.
 2. **Loading** — a radial glow behind *"Discover your next you"* while the coach
    speaks its opening line.
-3. **Discovery** — the coach asks your **name + two questions** (where you are
-   now, where you're going). Voice-first, with a text fallback.
+3. **Discovery** — the coach asks your **name + three questions**. This is a true
+   audio-to-audio conversation: Miles hears the microphone directly and answers
+   in his own voice, with no speech-to-text in front of him and no text
+   synthesis behind him. A typed fallback stays available.
 4. **Reveal** — the config name in tracked caps above an animated sunrise plate,
    the identity headline, a short cinematic narrative, then `CONTINUE` /
    `START OVER`. The coach speaks a personalized closing as the card resolves.
@@ -150,10 +152,15 @@ Mobile Atelier, Field Workshop, Basecamp Explorer, or Momentum Commuter.
 ### Prerequisites
 - Node.js 18+
 - A Google **Gemini API key** ([aistudio.google.com](https://aistudio.google.com/app/apikey))
-- The coach's voice uses **Gemini native audio** over the Live API and needs only
+- The conversation is **audio to audio** over the Gemini Live API and needs only
   `GEMINI_API_KEY`. Google Cloud Text-to-Speech credentials
-  (`GOOGLE_APPLICATION_CREDENTIALS`) are an optional second tier; with neither, the
+  (`GOOGLE_APPLICATION_CREDENTIALS`) are an optional lower tier; with neither, the
   app falls back to the browser's Web Speech voice automatically.
+- A **microphone** and a browser with `AudioWorklet` (all current browsers). Serve
+  over `localhost` or HTTPS — `getUserMedia` is blocked on plain HTTP origins.
+- `npm run dev` starts `gateway.js`, which runs Next behind it. Running
+  `next dev` directly (`npm run dev:next`) gives you the app **without**
+  `/api/live`, so the conversation falls back to the typed REST path.
 
 ### Setup
 
@@ -173,8 +180,11 @@ Open [http://localhost:3000](http://localhost:3000)
 |----------|----------|-------------|
 | `GEMINI_API_KEY` | Yes | Google Gemini API key |
 | `GEMINI_MODEL` | No | Conversation model (default: `gemini-3.6-flash`) |
-| `GEMINI_TTS_MODEL` | No | Voice model (default: `gemini-3.1-flash-live-preview`) |
-| `GEMINI_TTS_VOICE` | No | Prebuilt voice name (default: `Puck`, upbeat male) |
+| `GEMINI_LIVE_MODEL` | No | Audio-to-audio conversation model (default: `gemini-3.1-flash-live-preview`) |
+| `GEMINI_TTS_MODEL` | No | Reader for the fixed lines (default: `gemini-3.1-flash-live-preview`) |
+| `GEMINI_REACTION_MODEL` | No | Fallback reaction model (default: `gemini-3.5-flash-lite`) |
+| `GEMINI_TTS_VOICE` | No | Prebuilt voice name (default: `Charon`, deeper male) |
+| `INTERNAL_PORT` | No | Port the Next child listens on behind the gateway (default: `PORT+1`) |
 | `GOOGLE_APPLICATION_CREDENTIALS` | No | GCP creds for Cloud TTS (falls back to Web Speech) |
 | `NEXT_PUBLIC_APP_ENV` | No | `development` or `production` |
 
@@ -189,8 +199,19 @@ Open [http://localhost:3000](http://localhost:3000)
   placeholder SVG silhouettes interpolated with `flubber`, driven live by a
   client-side keyword scorer over the speech transcript, resolving to the model's
   chosen config at the reveal. Honors `prefers-reduced-motion`.
-- **`app/api/chat/route.ts`** — a single Google Gemini call with one system prompt.
-  Returns `{type:'message'}` during Q&A and `{type:'gotham_reveal', data}` after Q2.
+- **`gateway.js`** — owns the public port. Cloud Run gives one, and the app needs
+  two servers on it: Next for pages and API routes, and a WebSocket at
+  `/api/live` that the App Router cannot serve. Runs Next as a child on
+  `INTERNAL_PORT` and forwards everything except the live socket.
+- **`live/relay.js`** — one browser WebSocket ⇄ one Gemini Live session. Holds the
+  API key, pipes mic PCM up and Charon audio down. See "Audio to audio" below.
+- **`app/frontend/hooks/useLiveSession.ts`** — the conversation: mic capture, turn
+  state, question injection, and the hand-off to the reveal.
+- **`app/frontend/lib/audio.ts`** — one AudioContext and one analyser for the whole
+  app, so the orb sees every playback path.
+- **`app/api/chat/route.ts`** — now only the **reveal** (`gemini-3.6-flash`), fed by
+  the live session's transcript. Its `stage:'reaction'` path survives as the
+  last-resort fallback when the relay is unreachable.
 - **`app/api/tts/route.ts`** — the coach's voice, in three tiers:
   1. **Gemini native audio** (`gemini-3.1-flash-live-preview`) over the Live API
      WebSocket. Native audio carries real prosody, so the read sounds human rather
@@ -208,6 +229,49 @@ Open [http://localhost:3000](http://localhost:3000)
   to the coach; deflects any spec/price questions warmly.
 - **`app/api/subscribe/route.ts`** — email-capture **stub** (validates shape, returns
   `{ok:true}`, stores nothing). `// TODO: wire to real ESP/CRM`.
+
+### Audio to audio
+
+The discovery conversation is one continuous Gemini Live session. The browser
+streams 16kHz mono PCM up; Charon's 24kHz audio comes back down and plays through
+the same analyser the orb reads. Miles hears tone, pacing and hesitation — the
+things a transcript throws away.
+
+**The questions are still fixed.** They are brand copy, so they play from
+pre-synthesised audio and are then recorded into the session as already asked.
+Miles improvises only the one-sentence reaction between them.
+
+Three things about the Live API cost real time to find. All were verified
+against the live endpoint, and the app depends on each:
+
+1. **This model's server-side VAD never fires.** Streaming real speech at healthy
+   levels (75% peak) produced no transcript, no response, and no error — the
+   audio was simply consumed. The identical audio bracketed by manual
+   `activityStart` / `activityEnd` came back correctly transcribed. So
+   `automaticActivityDetection` is **disabled**, and the VAD lives in
+   `public/worklets/pcm-recorder.js`, which sends the turn boundaries.
+
+2. **Recording a question as a model turn corrupts the next reply.** The obvious
+   shape — `role:'model'` with `turnComplete:false` — leaves one of Miles' own
+   turns open, and he finishes it. The next reaction comes back with an invented
+   question spliced into the middle of it:
+   `"Pancakes after a long hike sounds like aWhat's one thing you'd love to learn? perfect morning"`.
+   Setting `turnComplete:true` instead makes him read the injection out loud.
+   Framing it as a note on the **user** side leaves no model turn dangling.
+   Measured over repeated runs of the real sequence: model-role 0/3 clean,
+   user-note 3/3 clean.
+
+3. **Ephemeral tokens do not work with this API key.** `POST /v1alpha/auth_tokens`
+   (snake_case — the camelCase path 404s) returns 200 and a real token, but the
+   Live socket rejects it in every presentation: `access_token=` closes 1008
+   *"unregistered callers"*, `key=` closes 1007 *"API key not valid"*. That is
+   why there is a relay holding the key instead of the browser dialing Google
+   directly. If a key that mints working tokens turns up, `live/relay.js` and
+   `connect()` in `useLiveSession.ts` are the only two places that change.
+
+**Fallbacks**, in order: live session → typed input on the same live session (no
+mic) → `/api/chat` reaction + cached question audio (no relay) → Cloud TTS Chirp 3
+HD → the browser's Web Speech voice.
 
 ### Design assets
 

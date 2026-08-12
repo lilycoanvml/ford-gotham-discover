@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { interpolate } from 'flubber';
-import type { ConfigId } from '@/app/frontend/hooks/useChat';
+import type { ConfigId } from '@/app/frontend/types/conversation';
 
 /*
  * ─── MorphSilhouette ────────────────────────────────────────────────────────

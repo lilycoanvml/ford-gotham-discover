@@ -38,11 +38,13 @@ steps:
 substitutions:
   _SERVICE_NAME: ford-gotham-discover
   _REGION: us-central1
-  # $SHORT_SHA is only populated by build triggers, not by `gcloud builds
-  # submit`, which would leave the tag dangling on a manual deploy. _TAG is
-  # overridable so a manual run can still pin a specific image.
-  _TAG: latest
-  _IMAGE_URL: us-central1-docker.pkg.dev/$PROJECT_ID/ford-gotham-discover/app:$_TAG
+  # Written out in full because neither built-in substitutions ($PROJECT_ID) nor
+  # other user substitutions expand inside a substitution's default value.
+  # Tagged :latest rather than :$SHORT_SHA, which is only populated by build
+  # triggers — a manual `gcloud builds submit` would push a dangling tag.
+  # Override the whole URL to deploy elsewhere or pin a version:
+  #   gcloud builds submit --substitutions=_IMAGE_URL=…/app:v2
+  _IMAGE_URL: us-central1-docker.pkg.dev/vml-map-xd-ford/ford-gotham-discover/app:latest
 
 images:
   - '$_IMAGE_URL'

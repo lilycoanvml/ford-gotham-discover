@@ -18,6 +18,8 @@
  */
 const http = require('http');
 const net = require('net');
+const fs = require('fs');
+const path = require('path');
 const { spawn } = require('child_process');
 const { attachLiveRelay } = require('./live/relay');
 
@@ -43,20 +45,58 @@ if (DEV) {
 }
 
 // ─── the Next.js child ───────────────────────────────────────────────────────
+// In production this is the server.js that `output: 'standalone'` generates at
+// the root of .next/standalone, which the Dockerfile copies to /app.
+const NEXT_ENTRY = path.join(__dirname, 'server.js');
+
+if (!DEV && !fs.existsSync(NEXT_ENTRY)) {
+  console.error(`[gateway] FATAL: ${NEXT_ENTRY} is missing. The standalone build did not land where expected.`);
+  console.error('[gateway] /app contains:', fs.readdirSync(__dirname).join(' '));
+  process.exit(1);
+}
+
 const child = DEV
   ? spawn('npx', ['next', 'dev', '--port', String(INTERNAL_PORT)], {
       stdio: 'inherit',
       env: { ...process.env, PORT: String(INTERNAL_PORT) },
     })
-  : spawn('node', ['server.js'], {
+  : spawn(process.execPath, [NEXT_ENTRY], {
       stdio: 'inherit',
+      cwd: __dirname,
       env: { ...process.env, PORT: String(INTERNAL_PORT), HOSTNAME: HOST },
     });
+
+// Without this a failed spawn raises an unhandled 'error' and the reason is
+// lost behind a generic crash.
+child.on('error', (err) => {
+  console.error('[gateway] failed to start next:', err.message);
+  process.exit(1);
+});
 
 child.on('exit', (code, signal) => {
   console.error(`[gateway] next exited (code=${code} signal=${signal}) — shutting down`);
   process.exit(code === null ? 1 : code);
 });
+
+/*
+ * Next takes a few seconds to listen, and Cloud Run starts routing traffic as
+ * soon as the gateway binds its port — so without this the first requests of a
+ * cold start 502 with nothing to explain why. Polls the child until it accepts
+ * a connection, and says so either way.
+ */
+let nextReady = false;
+(function waitForNext(attempt = 0) {
+  const probe = net.connect(INTERNAL_PORT, HOST, () => {
+    nextReady = true;
+    probe.destroy();
+    console.log(`[gateway] next is accepting connections on :${INTERNAL_PORT}`);
+  });
+  probe.on('error', () => {
+    probe.destroy();
+    if (attempt === 40) console.error(`[gateway] next still not listening on :${INTERNAL_PORT} after 20s`);
+    setTimeout(() => waitForNext(attempt + 1), 500);
+  });
+})();
 
 // Cloud Run sends SIGTERM on scale-down; take the child with us so the
 // container actually stops instead of lingering until the grace period ends.
@@ -76,8 +116,10 @@ const server = http.createServer((req, res) => {
   proxyReq.on('error', (err) => {
     // Next is still booting, or died. Either way there is no page to serve.
     if (!res.headersSent) res.writeHead(502, { 'Content-Type': 'text/plain' });
-    res.end('Upstream unavailable');
-    if (process.env.DEBUG_GATEWAY) console.warn('[gateway] proxy error:', err.message);
+    res.end(nextReady ? 'Upstream error' : 'Starting up');
+    // Logged unconditionally: a silent 502 is the single most expensive thing
+    // to debug on Cloud Run, where there is no shell to poke at.
+    console.warn(`[gateway] proxy error for ${req.method} ${req.url}: ${err.message} (nextReady=${nextReady})`);
   });
   req.pipe(proxyReq);
 });

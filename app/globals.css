@@ -25,14 +25,14 @@
   --signal:      #F2B705; /* placeholder — warm signal, use sparingly */
 
   /* ── Figma palette ──────────────────────────────────────────────────────
-     The three pastels are a set: they fill the Find / Your / Fathom chips on
+     The three pastels are a set: they fill the Fathom / Your / Future chips on
      the landing, then return in the same order as the orb's per-question
      colours. */
   --gd-black:   #000000;
   --gd-surface: #14141D; /* guide bubble, back button, input field */
-  --gd-steel:   #89A0B1; /* primary action + "Find" chip + Q3 orb */
+  --gd-steel:   #89A0B1; /* primary action + "Fathom" chip + Q3 orb */
   --gd-terra:   #DC997E; /* "Your" chip + Q1 orb */
-  --gd-sage:    #B3C3A9; /* "Fathom" chip + Q2 orb */
+  --gd-sage:    #B3C3A9; /* "Future" chip + Q2 orb */
   --gd-grey:    #8A8A8A; /* secondary copy */
   --gd-grey-2:  #999999; /* chat status line */
   --gd-glow:    #63A1CE; /* loading-screen radial glow */
@@ -167,8 +167,12 @@ button { font-family: inherit; -webkit-tap-highlight-color: transparent; }
      as margin instead of running to the edges. */
   --gd-hero-size: clamp(20px, calc(8.4cqw - 3px), 90px);
 }
-/* Find / Your / Fathom — the chip row IS the wordmark. Em-sized so it scales
-   as one unit; the three words total ~9.1em, the width the hero scale assumes. */
+/* Fathom / Your / Future — the chip row IS the wordmark. Em-sized so it scales
+   as one unit; the three words total ~10.1em, the width the hero scale assumes.
+   That is up from ~9.1em when this read "Find Your Fathom": the row sits at
+   roughly 85% of the container rather than 76%, which still clears both ends of
+   the clamp, so the scale below is unchanged. Retune 8.4cqw if the copy grows
+   again. */
 .landing-chips {
   display:flex; align-items:flex-end; justify-content:center;
   flex-wrap:nowrap; width:100%;

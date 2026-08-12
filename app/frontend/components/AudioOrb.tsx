@@ -25,7 +25,7 @@ interface GradientStop { position: number; r: number; g: number; b: number; a: n
 /*
  * Each set runs light tint (core) → the palette colour (body) → a darkened
  * edge, with alpha falling off outward, matching the reference's stop shape.
- * Order is terra → sage → steel: the Find / Your / Fathom chips, and the order
+ * Order is terra → sage → steel: the Fathom / Your / Future chips, and the order
  * the three questions are asked in.
  */
 const PALETTE_STOPS: GradientStop[][] = [

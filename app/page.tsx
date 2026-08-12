@@ -26,13 +26,25 @@ function safeConfig(id: string | undefined): ConfigId | null {
 // The audio engine (context, analyser, clip cache, PCM playback) moved to
 // app/frontend/lib/audio.ts so the live session can share the same graph.
 
-// Sanitize closingMessage — Gemini occasionally returns template text instead of
-// actual content (square-bracket instructions). Strip it to a safe fallback.
+/*
+ * Sanitize closingMessage — Gemini occasionally returns template text instead of
+ * actual content (square-bracket instructions). Strip it to a safe fallback.
+ *
+ * Both fallbacks have to end the way a good closingMessage ends: on the
+ * stay-in-the-loop question that hands the customer to the capture screen. They
+ * cannot name the user's ambition (there is no payload to read it from), so they
+ * stay general — but they must not revert to "take a look", which points at the
+ * card instead of forward. Dashes are avoided on purpose: the voice engine reads
+ * one as a full stop.
+ */
+const CLOSING_FALLBACK =
+  "Want to stay in the loop as we build the perfect vehicle for where you're headed?";
+
 function sanitizeClosingMsg(msg: string): string {
   if (!msg || msg.startsWith('[') || msg.length > 350) {
-    return "Here's who you're becoming — and the vehicle built to take you there. Take a look.";
+    return `Here's who you're becoming, and the vehicle built to take you there. ${CLOSING_FALLBACK}`;
   }
-  return msg.replace(/\[.*?\]/g, '').trim() || "Take a look at who you're becoming.";
+  return msg.replace(/\[.*?\]/g, '').trim() || CLOSING_FALLBACK;
 }
 
 
@@ -157,9 +169,9 @@ function LandingScreen({ mobileFrame, onToggleFrame, onStart }: {
         {/* The wordmark IS the chip row — the three pastels then return in the
             same order as the orb's colours, one per question. */}
         <h1 className="landing-chips">
-          <span className="landing-chip landing-chip-1">Find</span>
+          <span className="landing-chip landing-chip-1">Fathom</span>
           <span className="landing-chip landing-chip-2">Your</span>
-          <span className="landing-chip landing-chip-3">Fathom</span>
+          <span className="landing-chip landing-chip-3">Future</span>
         </h1>
 
         <p className="landing-sub">
@@ -224,7 +236,7 @@ function ChatScreen({ onComplete, onBack }: {
   const isBusy      = phase === 'thinking' || phase === 'revealing' || phase === 'connecting';
 
   // The orb takes the next palette colour per question (terra → sage → steel),
-  // matching the order of the Find / Your / Fathom chips on the landing screen.
+  // matching the order of the Fathom / Your / Future chips on the landing screen.
   // The name prompt shares Q1's colour, so each of the three questions gets one.
   const orbColor = Math.min(2, Math.max(0, progressCount - 1));
   const orbMode: OrbMode =

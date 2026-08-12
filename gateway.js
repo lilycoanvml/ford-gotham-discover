@@ -79,22 +79,47 @@ child.on('exit', (code, signal) => {
 });
 
 /*
- * Next takes a few seconds to listen, and Cloud Run starts routing traffic as
- * soon as the gateway binds its port — so without this the first requests of a
- * cold start 502 with nothing to explain why. Polls the child until it accepts
- * a connection, and says so either way.
+ * Cloud Run's startup probe is a TCP connect to $PORT, and it starts routing
+ * traffic the moment that succeeds. Binding the public port before Next is
+ * listening therefore guarantees a window of ECONNREFUSED 502s on every cold
+ * start — which, at min-instances=0, is the first visitor of every idle period.
+ *
+ * So the public port stays closed until the child accepts a connection. The
+ * probe then means what it says, and Cloud Run holds traffic for us.
  */
 let nextReady = false;
+
+// If Next never comes up, bind anyway rather than letting the container fail to
+// start: a served 502 carries the reason in the logs, whereas a container that
+// never listens is reported by Cloud Run as a generic startup failure.
+const LISTEN_ANYWAY_MS = 60000;
+
+function listenOnce(why) {
+  if (listenOnce.done) return;
+  listenOnce.done = true;
+  server.listen(PORT, '0.0.0.0', () => {
+    console.log(`[gateway] listening on :${PORT} → next on :${INTERNAL_PORT} (${DEV ? 'dev' : 'production'}, ${why})`);
+  });
+}
+
+setTimeout(() => {
+  if (!nextReady) {
+    console.error(`[gateway] next never listened on :${INTERNAL_PORT} — opening :${PORT} anyway so the failure is visible`);
+    listenOnce('degraded');
+  }
+}, LISTEN_ANYWAY_MS).unref();
+
 (function waitForNext(attempt = 0) {
   const probe = net.connect(INTERNAL_PORT, HOST, () => {
     nextReady = true;
     probe.destroy();
     console.log(`[gateway] next is accepting connections on :${INTERNAL_PORT}`);
+    listenOnce('ready');
   });
   probe.on('error', () => {
     probe.destroy();
     if (attempt === 40) console.error(`[gateway] next still not listening on :${INTERNAL_PORT} after 20s`);
-    setTimeout(() => waitForNext(attempt + 1), 500);
+    setTimeout(() => waitForNext(attempt + 1), 500).unref();
   });
 })();
 
@@ -153,6 +178,4 @@ server.on('upgrade', (req, socket, head) => {
 
 attachLiveRelay(server, '/api/live');
 
-server.listen(PORT, '0.0.0.0', () => {
-  console.log(`[gateway] listening on :${PORT} → next on :${INTERNAL_PORT} (${DEV ? 'dev' : 'production'})`);
-});
+// The port is opened by listenOnce() above, once Next is actually reachable.

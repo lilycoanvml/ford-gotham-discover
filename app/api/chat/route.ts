@@ -62,6 +62,10 @@ It is read by a voice engine, so write it the way it should sound.
   taking the studio on the road". Never a generic "for your adventures".
 - Do not promise a date, a price, or that anything is for sale. "As we build" is
   the strongest claim available.
+- NEVER say email, inbox, newsletter or sign up. We collect a PHONE NUMBER and
+  nothing else. Do not name the channel at all here: a fixed line spoken right
+  after this one says "phone number", and two different promises is worse than
+  one. Just ask if they want to stay in the loop.
 - No em dashes, en dashes or hyphens for pauses: the voice engine reads a dash as
   a full stop and the line lands in fragments. Use commas and periods.
 

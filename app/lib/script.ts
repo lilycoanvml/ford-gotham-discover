@@ -19,5 +19,16 @@ export const OPENING_LINE: string = script.openingLine;
 
 export const QUESTIONS = script.questions as readonly string[];
 
+/*
+ * Spoken a beat after the reveal's closing line. The closing line is written by
+ * the model and ends on "want to stay in the loop?", which leaves the customer
+ * agreeing to something with no obvious next move. This is the move: it names
+ * the button and what it asks for.
+ *
+ * Fixed rather than model-written on purpose — it is the one line that makes a
+ * promise about what we collect, so it must say phone number every single time.
+ */
+export const REVEAL_FOLLOW_UP: string = script.revealFollowUp;
+
 /** How many user answers arrive before the reveal: the name, then one per question. */
 export const ANSWERS_BEFORE_REVEAL = QUESTIONS.length + 1;

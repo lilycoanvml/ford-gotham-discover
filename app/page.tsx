@@ -10,6 +10,7 @@ import {
   audioLevel, micLevel, syntheticEnvelope, primeAudio, primeVoices, prewarmTTS,
   speak, stopSpeech,
 } from '@/app/frontend/lib/audio';
+import { REVEAL_FOLLOW_UP } from '@/app/lib/script';
 
 // ─── TYPES ───────────────────────────────────────────────────────────────────
 type Screen = 'landing' | 'chat' | 'reveal' | 'capture' | 'share';
@@ -39,6 +40,10 @@ function safeConfig(id: string | undefined): ConfigId | null {
  */
 const CLOSING_FALLBACK =
   "Want to stay in the loop as we build the perfect vehicle for where you're headed?";
+
+// A conversational beat between the closing line and the follow-up, so the two
+// read as an exchange rather than one run-on thought.
+const FOLLOW_UP_BEAT_MS = 420;
 
 function sanitizeClosingMsg(msg: string): string {
   if (!msg || msg.startsWith('[') || msg.length > 350) {
@@ -387,15 +392,25 @@ function RevealScreen({ reveal, onNext, onRestart }: {
   const theme = themeFor(config);
   const spoken = useRef(false);
 
-  // The card's staged fade-in is pure CSS (see .reveal-* animations); this only
-  // starts the spoken closing line, timed to land with it. The guard sits inside
-  // the timer, not around it — StrictMode's mount/cleanup/mount would otherwise
-  // clear the first timer and short-circuit the second, so nothing ever spoke.
+  /*
+   * The card's staged fade-in is pure CSS (see .reveal-* animations); this only
+   * starts the spoken closing line, timed to land with it. The guard sits inside
+   * the timer, not around it — StrictMode's mount/cleanup/mount would otherwise
+   * clear the first timer and short-circuit the second, so nothing ever spoke.
+   *
+   * Two segments, not one. The model's closing line ends on "want to stay in the
+   * loop?"; the follow-up is fixed copy that answers "how?" by naming the button
+   * and the phone number. Splitting them means the promise about what we collect
+   * is never left to the model, and the beat between reads as a reply rather
+   * than one long sentence.
+   */
   useEffect(() => {
     const t = setTimeout(() => {
       if (spoken.current) return;
       spoken.current = true;
-      speak(sanitizeClosingMsg(reveal.closingMessage));
+      speak(sanitizeClosingMsg(reveal.closingMessage), () => {
+        setTimeout(() => speak(REVEAL_FOLLOW_UP), FOLLOW_UP_BEAT_MS);
+      });
     }, 700);
     return () => { clearTimeout(t); stopSpeech(); };
   // eslint-disable-next-line react-hooks/exhaustive-deps

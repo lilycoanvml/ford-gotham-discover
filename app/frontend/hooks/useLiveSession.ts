@@ -21,7 +21,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { OPENING_LINE, QUESTIONS, ANSWERS_BEFORE_REVEAL } from '@/app/lib/script';
+import { OPENING_LINE, QUESTIONS, ANSWERS_BEFORE_REVEAL, REVEAL_FOLLOW_UP } from '@/app/lib/script';
 import {
   primeAudio, prefetchSpeech, speakCached, stopSpeech, currentToken, isStale,
   LivePlayer, speakFallback, getAudioContext, attachMicAnalyser, detachMicAnalyser,
@@ -141,6 +141,10 @@ export function useLiveSession({ onComplete }: LiveSessionOptions) {
 
   const requestReveal = useCallback(async () => {
     revealWaitRef.current = true;
+    // The reveal screen speaks this a beat after the closing line. Synthesising
+    // it now, while the reveal itself is still generating, means it plays from
+    // cache instead of leaving a hole in the middle of the hand-off.
+    prefetchSpeech(REVEAL_FOLLOW_UP);
     try {
       const res = await fetch('/api/chat', {
         method: 'POST',

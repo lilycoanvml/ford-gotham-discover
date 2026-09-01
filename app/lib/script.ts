@@ -26,7 +26,8 @@ export const QUESTIONS = script.questions as readonly string[];
  * the button and what it asks for.
  *
  * Fixed rather than model-written on purpose — it is the one line that makes a
- * promise about what we collect, so it must say phone number every single time.
+ * promise about what we collect, so it must name both options the capture screen
+ * accepts, every single time. Keep it in step with app/lib/contact.ts.
  */
 export const REVEAL_FOLLOW_UP: string = script.revealFollowUp;
 

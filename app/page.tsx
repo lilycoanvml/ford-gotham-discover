@@ -11,6 +11,7 @@ import {
   speak, stopSpeech,
 } from '@/app/frontend/lib/audio';
 import { REVEAL_FOLLOW_UP } from '@/app/lib/script';
+import { isValidContact } from '@/app/lib/contact';
 import DiscoveryBoard from '@/app/frontend/components/DiscoveryBoard';
 import {
   emptyBoard, ensureMinimumImages, fetchFills, slotsForAnswer, takenSlugs, tileFor,
@@ -155,6 +156,13 @@ function Waveform() {
 const UI_BACK  = '/ui/back-circle.svg';      // 41:681 — 61px circle + steel arrow
 const UI_OVAL  = '/brand/ford-oval.svg';     // 41:320 — Ford oval, dark variant
 const UI_FATHOM = '/brand/fathom-wordmark.svg'; // 46:360 — vehicle lockup
+
+/* The card's vehicle silhouettes — Figma 37:302 (warm) and 37:305 (cool), the
+   plate fills from Social Card 1 / 2. Transparent PNGs at the plate's own 4:3,
+   so they drop in full-bleed and the card's gradient becomes the glow behind
+   them. Same object the reveal plates 25:268 / 33:287 show. */
+const UI_CAR_WARM = '/reveal/card-warm.png';
+const UI_CAR_COOL = '/reveal/plate-cool.png';
 
 // Intro frame, from the newer file ntdaHrZCrRGdtT6VcTYh9x (node 1:7). The lockup
 // here is a different cut from UI_FATHOM above — taller cap height, and it
@@ -529,11 +537,11 @@ function RevealScreen({ reveal, board, onNext, onRestart }: {
 function CaptureScreen({ onNext, onBack }: {
   onNext: () => void; onBack: () => void;
 }) {
-  const [phone, setPhone] = useState('');
+  const [contact, setContact] = useState('');
   const [status, setStatus] = useState<'idle' | 'sending' | 'error'>('idle');
-  // Permissive: allow spaces, dashes, parens, a leading +. 10-15 digits.
-  const digits = phone.replace(/\D/g, '');
-  const valid = /^\+?[\d\s().-]+$/.test(phone.trim()) && digits.length >= 10 && digits.length <= 15;
+  // One field takes either. The rule lives in app/lib/contact.ts so this and
+  // /api/subscribe cannot drift apart about what counts as valid.
+  const valid = isValidContact(contact);
 
   const submit = async () => {
     if (!valid) { setStatus('error'); return; }
@@ -542,7 +550,7 @@ function CaptureScreen({ onNext, onBack }: {
       await fetch('/api/subscribe', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ phone: phone.trim() }),
+        body: JSON.stringify({ contact: contact.trim() }),
       });
     } catch { /* stub — proceed regardless */ }
     onNext();
@@ -558,28 +566,32 @@ function CaptureScreen({ onNext, onBack }: {
         <div className="capture-label">The reveal is coming</div>
         <h2 className="capture-title">Be the first to see it.</h2>
         <p className="capture-sub">
-          Enter your phone number for updates.
+          Enter your phone number or email for updates.
         </p>
 
         <div className="capture-field">
+          {/* type=text, not tel: a numeric keypad cannot produce an "@", and the
+              field now has to accept both. autoComplete is off because the
+              browser cannot know which of the two this wants and was offering
+              stray digits from unrelated saved fields. */}
           <input
-            type="tel"
-            inputMode="tel"
-            autoComplete="tel"
-            value={phone}
-            onChange={e => { setPhone(e.target.value); if (status === 'error') setStatus('idle'); }}
+            type="text"
+            inputMode="text"
+            autoComplete="off"
+            value={contact}
+            onChange={e => { setContact(e.target.value); if (status === 'error') setStatus('idle'); }}
             onKeyDown={e => e.key === 'Enter' && submit()}
-            placeholder="(555) 123-4567"
-            aria-label="Phone number"
+            placeholder="(555) 123-4567 or you@email.com"
+            aria-label="Phone number or email"
           />
-          {status === 'error' && <div className="capture-error">Please enter a valid phone number.</div>}
+          {status === 'error' && <div className="capture-error">Please enter a valid phone number or email.</div>}
         </div>
 
         <div className="capture-ctas">
           <button
             className="gd-pill capture-keep"
             onClick={submit}
-            disabled={status === 'sending' || !phone.trim()}
+            disabled={status === 'sending' || !contact.trim()}
           >
             {status === 'sending' ? 'One moment…' : 'Keep me updated'}
           </button>
@@ -649,6 +661,10 @@ function ShareScreen({ reveal, onRestart, onBack }: {
               cutout that lets the card's gradient read as light, with the
               wordmark centred on it. Figma 41:335 / 41:361. */}
           <div className="share-card-plate">
+            <img
+              src={theme === 'warm' ? UI_CAR_WARM : UI_CAR_COOL}
+              alt="" aria-hidden="true" className="share-card-vehicle"
+            />
             <img src={UI_FATHOM} alt="" aria-hidden="true" className="share-card-wordmark" />
           </div>
 

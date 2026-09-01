@@ -684,20 +684,34 @@ button { font-family: inherit; -webkit-tap-highlight-color: transparent; }
 }
 
 /* Glow window: 321.12 x 240.48, inset 30.96 each side, bottom flush with the
-   card. It holds no art now that the vehicle is gone — the card's own gradient
-   reads straight through it, and the wordmark centres on the brightest part. */
+   card. The card's own gradient reads through it as light, and the vehicle
+   stands in front of that light. */
 .share-card-plate {
   position:absolute; left:8.08cqw; right:8.08cqw; bottom:0; z-index:0;
   height:40.93%;                 /* 240.48 of 587.52 */
   border-radius:9.4cqw; overflow:hidden;
 }
-/* FATHOM lockup, 196 wide. It sat at 11.5% down the plate to clear the vehicle
-   roofline; with the vehicle gone it centres on the glow — 71.9% down the card
-   in 41:335/41:361, which is 31.3% into a plate starting at 59.07%.
+/* The vehicle — Figma 37:302 (warm) / 37:305 (cool), the plate fills from the
+   two social cards. Both are transparent PNGs at 1200x900, which is the plate's
+   own 4:3 to within a rounding error, so they sit full-bleed with no cropping
+   and the gradient behind becomes the glow they are silhouetted against.
+
+   The art is already in card orientation — 37:305 carries Figma's mirror baked
+   into the export — so nothing is flipped here. */
+.share-card-vehicle {
+  position:absolute; inset:0; z-index:0;
+  width:100%; height:100%; object-fit:cover; display:block;
+}
+
+/* FATHOM lockup, 196 wide. 41:335/41:361 centre it at 31.3% into the plate,
+   but those frames hide the vehicle (37:302 is hidden:true). With the vehicle
+   restored that lands the black lockup on the black roof and it disappears, so
+   it goes back to 11.5% — the position it held when the vehicle was last here,
+   above the roofline and on the open part of the glow.
    Percentage margins resolve against width, so this is positioned, not nudged. */
 .share-card-wordmark {
-  position:absolute; top:31.3%; left:50%; transform:translate(-50%, -50%);
-  width:51.17cqw; height:auto; display:block;
+  position:absolute; top:11.5%; left:50%; transform:translate(-50%, -50%);
+  width:51.17cqw; height:auto; display:block; z-index:1;
 }
 .share-card-footer {
   position:absolute; left:0; right:0; bottom:0; z-index:2;

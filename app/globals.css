@@ -95,15 +95,26 @@ button { font-family: inherit; -webkit-tap-highlight-color: transparent; }
 /* ── App shell ── */
 /* container-type makes every cqw below resolve against the APP's width, not the
    window's. Without it, mobile-frame demo mode (a 390px box on a 1440px window)
-   sized type off the window and blew the layout out past the frame. */
+   sized type off the window and blew the layout out past the frame.
+
+   `size` rather than `inline-size` so cqh is available too: the board is a tall
+   composition and has to be capped by height as well as width or it runs off a
+   short window. #era-app is fixed-size in both modes, so nothing here depends on
+   its own content to size itself. */
 #era-app {
   position:fixed; inset:0; overflow:hidden; background:var(--bg);
-  container-type:inline-size; container-name:app;
+  container-type:size; container-name:app;
 }
 .era-screen {
   position:absolute; inset:0; display:flex; flex-direction:column;
   background:var(--bg); overflow-y:auto; -webkit-overflow-scrolling:touch;
   animation: screenIn 0.40s ease-out both;
+
+  /* The shared content column. Figma draws it 243 wide in a 279x604 phone, so
+     it is 87.1% of the width AND 40.2% of the height — on a real 390x844 device
+     those agree exactly, and taking the min keeps it honest on any other shape.
+     Screens that also carry chrome tighten the height term below. */
+  --col: min(87.1cqw, 40.2cqh, 560px);
 }
 
 /* ═══════════════════════════════════════════════════════════
@@ -161,10 +172,8 @@ button { font-family: inherit; -webkit-tap-highlight-color: transparent; }
 .landing-screen {
   background:var(--gd-black);
 
-  /* 243 of the 279 frame. Capped so the phone design does not run to billboard
-     scale on a desktop window — 560px puts "Find" at ~85px, the size the old
-     1440-wide hero headline ran at. */
-  --col:      min(87.1cqw, 560px);
+  /* --col comes from .era-screen. The intro is the one screen with no chrome
+     above or below the composition, so it takes the full shared column. */
   --col-gap:  calc(var(--col) * 0.0617); /* 15 */
   --row-gap:  calc(var(--col) * 0.0576); /* 14 */
   --tile-h:   calc(var(--col) * 0.2551); /* 62 */
@@ -246,6 +255,128 @@ button { font-family: inherit; -webkit-tap-highlight-color: transparent; }
   color:#FFFFFF; filter:none;
 }
 
+/* ═══════════════════════════════════════════════════════════
+   DISCOVERY BOARD — Figma 1:10 (filling) / 1:146 (reveal)
+
+   The same nine slots the customer watches fill during the conversation are
+   the ones the reveal lands on, so this is one component styled once and
+   rendered by both screens.
+
+   It reuses the intro's column split exactly — 165 + 15 + 63 = 243 — but the
+   two blocks mirror it: narrow column right on top, narrow column left below.
+   That alternation is the rhythm of the design, so the blocks are separate
+   grids rather than one uniform four-row one.
+
+   Measured off the frame, the rows normalise to 62 with a 14 inner gap, 17
+   between blocks and 30 before the persona: 464 design px against 463 drawn.
+   ═══════════════════════════════════════════════════════════ */
+.board {
+  --b-gap:    calc(var(--col) * 0.0617); /* 15 — column gap, shared with intro */
+  --b-inner:  calc(var(--col) * 0.0576); /* 14 — between rows inside a block   */
+  --b-block:  calc(var(--col) * 0.0700); /* 17 — between blocks                */
+  --b-lead:   calc(var(--col) * 0.1235); /* 30 — the persona sits apart        */
+  --b-row:    calc(var(--col) * 0.2551); /* 62 — every tile is one row tall    */
+  --b-narrow: calc(var(--col) * 0.2593); /* 63 — the tall tiles and the dots   */
+  --b-wide:   calc(var(--col) * 0.6790); /* 165                                */
+
+  display:flex; flex-direction:column; gap:var(--b-block);
+  width:var(--col); margin:0 auto;
+}
+/* One row, two columns: a stack of two tiles beside a single tall one. The
+   stack is a flex column rather than two grid rows, so the tall tile needs no
+   row spanning — it just stretches. Columns are assigned explicitly because the
+   two blocks put the narrow one on opposite sides. */
+.board-block { display:grid; grid-template-rows:auto; gap:var(--b-gap); align-items:stretch; }
+.board-block-a { grid-template-columns:var(--b-wide) var(--b-narrow); }
+.board-block-c { grid-template-columns:var(--b-narrow) var(--b-wide); }
+.board-block-a > .board-col-wide { grid-column:1; }
+.board-block-a > .board-tall     { grid-column:2; }
+.board-block-c > .board-tall     { grid-column:1; }
+.board-block-c > .board-col-wide { grid-column:2; }
+.board-col-wide { display:flex; flex-direction:column; gap:var(--b-inner); }
+
+/* Every slot is painted from the first frame — an empty tile is a pastel
+   shape, not a hole — so nothing reflows when a fill lands mid-sentence. */
+.board-tile {
+  display:flex; align-items:center; justify-content:center;
+  border-radius:100px; overflow:hidden;
+  height:var(--b-row); flex-shrink:0;
+  object-fit:cover;
+  font-family:var(--font-display); font-weight:700; font-style:normal;
+  line-height:1; letter-spacing:-0.01em; color:#1B2026;
+  text-align:center;
+}
+/* The tall tiles are the only ones that break the one-row height: they run the
+   full height of their block, which is what stitches the two columns together. */
+.board-tall {
+  align-self:stretch;
+  width:var(--b-narrow); height:100%;
+  background:var(--gd-terra);
+}
+.board-wide { width:100%; background:var(--gd-sage); }
+.board-full { width:var(--col); background:var(--gd-steel); }
+.board-name {
+  /* 128 in the frame, but a name is not a fixed-width thing — it holds that as
+     a floor and grows for longer ones rather than clipping someone. */
+  min-width:calc(var(--col) * 0.5267);
+  width:fit-content; max-width:100%;
+  padding:0 calc(var(--col) * 0.062);
+  align-self:flex-start;
+  background:var(--gd-sage);
+  font-size:calc(var(--col) * 0.1235); /* 30 */
+}
+.board-persona {
+  width:var(--col); margin-top:calc(var(--b-lead) - var(--b-block));
+  background:var(--gd-steel);
+  /* 27 in the frame for "Swell Dweller". The real config names run longer
+     ("Overland Trailblazer"), so this is a touch tighter and allowed to take a
+     second line — two lines still clear the pill's height. */
+  font-size:calc(var(--col) * 0.1000);
+  line-height:1.04;
+  padding:0 calc(var(--col) * 0.05);
+  text-wrap:balance;
+}
+/* A word fill sits on the slot's own pastel — the design never gives words a
+   colour of their own, which is what lets a word and a photo share a row
+   without the board looking like two different systems. */
+.board-word {
+  font-size:calc(var(--col) * 0.1111); /* 27 */
+  padding:0 calc(var(--col) * 0.045);
+  text-wrap:balance;
+}
+/* A 63-wide tile cannot hold 27px type. Words landing in a tall slot get their
+   own much smaller setting and are allowed to wrap, rather than being clipped
+   to "Marke". */
+.board-tall.board-word {
+  font-size:calc(var(--col) * 0.052);
+  line-height:1.15;
+  padding:0 calc(var(--col) * 0.018);
+  letter-spacing:0;
+}
+
+/* Punctuation. These two never take content. Right-aligned in their column,
+   which is what leaves the deliberate gap on their left. */
+.board-dots {
+  display:flex; justify-content:flex-end; align-items:center;
+  gap:calc(var(--col) * 0.0494); /* 12 */
+  height:var(--b-row);
+}
+.board-dot {
+  width:var(--b-narrow); height:var(--b-row);
+  border-radius:50%; flex-shrink:0;
+}
+.board-dot-terra { background:var(--gd-terra); }
+.board-dot-steel { background:var(--gd-steel); }
+
+/* Content fades up onto the tile it lands in. The tile itself never moves, so
+   a fill arriving while someone is still talking is a change of texture rather
+   than a jump in the layout. */
+.board-tile.is-filled { animation: boardFill 0.42s ease-out both; }
+@keyframes boardFill {
+  from { opacity:0; transform:scale(0.94); }
+  to   { opacity:1; transform:none; }
+}
+
 /* Demo-only viewport toggle. Not in the Figma frames — kept as a faint ghost
    so presenting the phone layout on a laptop stays one click away. */
 .gd-demo-toggle {
@@ -263,7 +394,21 @@ button { font-family: inherit; -webkit-tap-highlight-color: transparent; }
 /* ═══════════════════════════════════════════════════════════
    CHAT — Figma 41:513
    ═══════════════════════════════════════════════════════════ */
-.chat-screen { background:var(--gd-black); overflow:hidden; }
+.chat-screen {
+  background:var(--gd-black); overflow:hidden;
+  /* Tightest of the three: the board shares this screen with the Miles header
+     and the mic dock. */
+  --col: min(87.1cqw, 30cqh, 460px);
+}
+
+/* Replaces the orb from the first answer on. Same box, so the swap does not
+   move the header or the dock. */
+.board-stage {
+  flex:1; min-height:0; position:relative; z-index:1;
+  display:flex; align-items:center; justify-content:center;
+  padding:clamp(12px, 2cqw, 28px) clamp(16px, 3.3cqw, 48px);
+  overflow:hidden;
+}
 
 .chat-header {
   display:flex; align-items:center; gap:clamp(10px, 2cqw, 16px);
@@ -372,88 +517,56 @@ button { font-family: inherit; -webkit-tap-highlight-color: transparent; }
 .chat-text-input button:disabled { opacity:0.35; cursor:not-allowed; }
 
 /* ═══════════════════════════════════════════════════════════
-   REVEAL — Figma 24:264 (Personality 1) + 33:282 (Personality 2)
-   Spacing follows Personality 2: the title sits ABOVE the plate with a 20px
-   gap. Personality 1 overlaps its box by -32px, which only works for a
-   single-line title — most config names wrap to two lines.
+   REVEAL — Figma 1:146 (file ntdaHrZCrRGdtT6VcTYh9x)
+
+   The reveal is now the board the customer already watched fill, with its last
+   two slots closed: the tall right-hand tile, and the persona pill along the
+   bottom. There is no plate, no silhouette and no narrative paragraph on screen
+   any more — Miles still SPEAKS the closing line and the follow-up, so the copy
+   did not go away, it just stopped being duplicated in text.
+
+   The share card still reads config_id, headline and the warm/cool theme, so
+   none of that machinery moved; only what this screen draws changed.
    ═══════════════════════════════════════════════════════════ */
-.reveal-screen { background:var(--gd-black); }
+.reveal-screen {
+  background:var(--gd-black);
+  /* Tighter than the shared column: this screen shares its height with two
+     CTAs below the board. */
+  --col: min(87.1cqw, 34cqh, 520px);
+}
 
 .reveal-inner {
-  flex:1; display:flex; flex-direction:column;
-  align-items:center; justify-content:center; gap:clamp(16px, 2.6cqw, 38px);
-  width:100%; max-width:644px; /* 604 content + 2x20 gutter */
-  margin:0 auto; padding:clamp(24px, 4cqw, 40px) 20px clamp(24px, 3cqw, 36px);
-  text-align:center; position:relative;
+  flex:1; min-height:0;
+  display:flex; flex-direction:column;
+  align-items:center; justify-content:center;
+  width:100%; margin:0 auto;
+  padding:clamp(16px, 3cqw, 32px) 20px;
 }
+/* Staged behind the closing line, which starts at 700ms — the board should be
+   settling as he begins speaking, not before he opens his mouth. */
+.reveal-inner .board { animation: fadeUp 0.7s ease-out both 0.30s; }
 
-.reveal-hero-stack {
+.reveal-ctas {
   display:flex; flex-direction:column; align-items:center;
-  width:100%; gap:clamp(8px, 1.4cqw, 20px);
+  gap:calc(var(--col) * 0.045);
+  width:100%; flex-shrink:0;
+  padding:0 20px min(10.4cqw, 56px);
+  animation: fadeUp 0.7s ease-out both 0.95s;
 }
-.reveal-config-title {
-  width:100%;
-  font-family:var(--font-display); font-weight:700;
-  font-size:clamp(19px, 5.2cqw, 45px); line-height:1.16;
-  /* 13.5px tracking @ 45px; text-indent re-centres the trailing letter-space */
-  letter-spacing:0.30em; text-indent:0.30em;
-  text-transform:uppercase; color:#fff;
-  overflow-wrap:break-word;
+/* Matches the intro's BEGIN exactly — 121x30, white, untracked. The two are the
+   same button in the customer's mind, so they are the same button on screen. */
+.reveal-continue {
+  width:calc(var(--col) * 0.4979);  /* 121 */
+  height:calc(var(--col) * 0.1235); /* 30  */
+  font-weight:700; font-size:calc(var(--col) * 0.0658); /* 16 */
+  letter-spacing:-0.01em; text-indent:0;
+  color:#FFFFFF; filter:none;
 }
-.reveal-hero-art { position:relative; width:100%; aspect-ratio:604 / 388; overflow:hidden; }
-
-/* The vehicle silhouette is gone. It used to stand in front of this glow inside
-   the same animated loop, so the glow could not simply be uncovered — these
-   stops are sampled straight off those frames, along the vertical axis above
-   the roofline where nothing occluded them. Centre and radii come from where
-   the loop's glow core landed inside the 604x388 window. */
-.reveal-glow { position:absolute; inset:0; display:block; }
-.reveal-hero-art[data-theme="warm"] .reveal-glow {
-  background:radial-gradient(ellipse 52% 88% at 50% 68%,
-    #BF7353 0%, #A66D56 6%, #966756 12%, #755C55 20%, #575152 30%,
-    #313C49 42%, #142834 55%, #081018 70%, #020408 85%, #000000 100%);
-}
-.reveal-hero-art[data-theme="cool"] .reveal-glow {
-  background:radial-gradient(ellipse 52% 88% at 50% 62%,
-    #598995 0%, #57848A 6%, #557D82 12%, #527473 20%, #4C695D 30%,
-    #45594C 42%, #384538 55%, #283024 70%, #181C14 82%, #000000 100%);
-}
-/* The loop breathed; this keeps that without the 4MB of frames. */
-@keyframes revealGlowBreathe {
-  0%,100% { transform:scale(1);    opacity:1; }
-  50%     { transform:scale(1.05); opacity:0.92; }
-}
-
-.reveal-copy {
-  display:flex; flex-direction:column; align-items:center;
-  gap:clamp(14px, 2.4cqw, 26px); width:100%; max-width:570px;
-}
-.reveal-headline {
-  font-family:var(--font-display); font-weight:700; color:#fff;
-  font-size:clamp(21px, 4.5cqw, 35px); line-height:1.28;
-  letter-spacing:-0.004em; text-wrap:balance;
-}
-.reveal-narrative {
-  font-family:var(--font-display); font-weight:400; color:#fff;
-  font-size:clamp(13.5px, 1.6cqw, 15px); line-height:1.35;
-}
-.reveal-ctas { display:flex; flex-direction:column; align-items:center; gap:clamp(14px, 2.2cqw, 25px); width:100%; }
-.reveal-continue { max-width:506px; } /* Figma: 506 of the 570 column */
-.reveal-startover { max-width:570px; }
-
-/* The card resolves in step with the coach's closing line, which starts at
-   700ms. Driven by animation-delay, not a JS-applied class — a class that
-   failed to land would leave the card blank. */
-@keyframes revealPlateIn { from { opacity:0; transform:scale(1.025); } to { opacity:1; transform:none; } }
-@media (prefers-reduced-motion: no-preference) {
-  /* Resolve in, then hand off to the breathing loop at 1.8s. Both animate
-     transform, so the second must come last in the list to win once it starts. */
-  .reveal-glow {
-    animation: revealPlateIn 1.1s ease-out both 0.70s,
-               revealGlowBreathe 7s ease-in-out 1.8s infinite;
-  }
-  .reveal-config-title { animation: fadeUp 0.7s ease-out both 0.85s; }
-  .reveal-copy         { animation: fadeUp 0.7s ease-out both 1.12s; }
+/* Deliberately quieter: this is the way back, not the way on. Not in the frame
+   — added because a reveal with no exit strands anyone the matcher read wrong. */
+.reveal-startover {
+  font-size:calc(var(--col) * 0.052);
+  letter-spacing:0.14em; text-indent:0.14em;
 }
 
 /* ═══════════════════════════════════════════════════════════
@@ -698,6 +811,7 @@ body:has(#era-app.mobile-frame) {
 /* ── Reduced motion: calm the staged beats ── */
 @media (prefers-reduced-motion: reduce) {
   .landing-bento, .landing-cta-area,
+  .reveal-inner .board, .reveal-ctas, .board-tile.is-filled,
   .chat-avatar { animation:none !important; }
   /* The orb itself stops in AudioOrb.tsx — it paints one static frame rather
      than running the loop, so there is no CSS animation here to cancel. */

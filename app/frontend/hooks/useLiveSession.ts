@@ -58,9 +58,19 @@ export interface LiveSessionOptions {
     reveal: GothamRevealPayload,
     transcript: { role: 'user' | 'assistant'; content: string }[],
   ) => void;
+  /*
+   * Fired the moment an answer is committed, whatever path it arrived by —
+   * spoken, typed, or typed on the degraded REST fallback. `n` counts the name
+   * as 1, so it lines up with `answers` and with the board's fill order.
+   *
+   * The board listens to this. It is deliberately not derived from `answers`
+   * changing, because the board needs the TEXT of the answer, and by the time a
+   * render sees the count the transcript has already moved on.
+   */
+  onAnswer?: (text: string, n: number) => void;
 }
 
-export function useLiveSession({ onComplete }: LiveSessionOptions) {
+export function useLiveSession({ onComplete, onAnswer }: LiveSessionOptions) {
   const [phase, setPhase] = useState<LivePhase>('idle');
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [answers, setAnswers] = useState(0);
@@ -80,6 +90,10 @@ export function useLiveSession({ onComplete }: LiveSessionOptions) {
   const heardRef    = useRef('');   // what the user is saying
   const saidRef     = useRef('');   // what Miles is saying
   const answersRef  = useRef(0);
+  // Held in a ref rather than a dependency: re-creating closeUserTurn on every
+  // parent render would tear down the socket handlers mid-conversation.
+  const onAnswerRef = useRef(onAnswer);
+  onAnswerRef.current = onAnswer;
   const askedRef    = useRef(0);     // how many fixed questions have been played
   const turnOpenRef = useRef(false); // has this user turn been committed yet
 
@@ -215,6 +229,7 @@ export function useLiveSession({ onComplete }: LiveSessionOptions) {
     const n = answersRef.current + 1;
     answersRef.current = n;
     setAnswers(n);
+    onAnswerRef.current?.(heard, n);
 
     if (n >= ANSWERS_BEFORE_REVEAL) void requestReveal();
   }, [push, requestReveal]);
@@ -420,6 +435,7 @@ export function useLiveSession({ onComplete }: LiveSessionOptions) {
     answersRef.current = n;
     setAnswers(n);
     setPhase('thinking');
+    onAnswerRef.current?.(text, n);
 
     // Fire the reveal first so it generates under the reaction, as the live
     // path does — this is the same overlap, just driven from the client.
@@ -473,6 +489,7 @@ export function useLiveSession({ onComplete }: LiveSessionOptions) {
     answersRef.current = n;
     setAnswers(n);
     turnOpenRef.current = false;
+    onAnswerRef.current?.(t, n);
     setPhase('thinking');
     sendJson({ type: 'text', text: t });
     if (n >= ANSWERS_BEFORE_REVEAL) void requestReveal();

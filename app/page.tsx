@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { GothamRevealPayload, ConfigId } from '@/app/frontend/types/conversation';
 import { useLiveSession } from '@/app/frontend/hooks/useLiveSession';
 import { CONFIG_LABELS } from '@/app/theme/ford-brand';
@@ -11,6 +11,11 @@ import {
   speak, stopSpeech,
 } from '@/app/frontend/lib/audio';
 import { REVEAL_FOLLOW_UP } from '@/app/lib/script';
+import DiscoveryBoard from '@/app/frontend/components/DiscoveryBoard';
+import {
+  emptyBoard, ensureMinimumImages, fetchFills, slotsForAnswer, takenSlugs, tileFor,
+} from '@/app/frontend/lib/board';
+import type { BoardState } from '@/app/frontend/lib/board';
 
 // ─── TYPES ───────────────────────────────────────────────────────────────────
 type Screen = 'landing' | 'chat' | 'reveal' | 'capture' | 'share';
@@ -52,6 +57,31 @@ function sanitizeClosingMsg(msg: string): string {
   return msg.replace(/\[.*?\]/g, '').trim() || CLOSING_FALLBACK;
 }
 
+
+/*
+ * The name chip wants "Anne", but people answer the name question with a whole
+ * sentence — "I'm Anne", "hey, it's Anne". This pulls the name back out.
+ *
+ * Deliberately local and instant rather than another model call: the chip is
+ * the first thing that fills, and it should land while they are still saying it.
+ * A wrong guess shows one wrong word on a pastel pill, which is recoverable;
+ * a two-second wait for the very first tile is not.
+ */
+const NAME_LEAD_INS = new Set([
+  'im', 'i', 'am', 'my', 'name', 'is', 'its', 'it', 'hi', 'hey', 'hello',
+  'call', 'me', 'this', 'the', 'well', 'so', 'uh', 'um', 'sure', 'yeah',
+]);
+
+function firstName(raw: string): string {
+  const words = raw
+    .replace(/[^\p{L}\p{N}\s'-]/gu, ' ')
+    .split(/\s+/)
+    .filter(Boolean);
+  const pick = words.find(w => !NAME_LEAD_INS.has(w.toLowerCase().replace(/'/g, ''))) ?? words[0];
+  if (!pick) return '';
+  const name = pick.slice(0, 14);
+  return name[0].toUpperCase() + name.slice(1).toLowerCase();
+}
 
 // ─── ICONS ───────────────────────────────────────────────────────────────────
 function MicIcon({ size = 22, color = 'currentColor' }: { size?: number; color?: string }) {
@@ -213,14 +243,56 @@ function LandingScreen({ mobileFrame, onToggleFrame, onStart }: {
  * speech-recognition object, no silence timer, and no auto-listen handoff to
  * schedule. What is left here is the mic gate, the typed fallback, and the orb.
  */
-function ChatScreen({ onComplete, onBack }: {
+function ChatScreen({ onComplete, onBack, board, setBoard }: {
   onComplete: (reveal: GothamRevealPayload, discoveryMsgs: { role: 'user' | 'assistant'; content: string }[]) => void;
   onBack: () => void;
+  board: BoardState;
+  setBoard: React.Dispatch<React.SetStateAction<BoardState>>;
 }) {
+  /*
+   * Each committed answer puts one or two tiles on the board.
+   *
+   * The board is read through a ref rather than the prop so the matcher always
+   * sees the slugs already placed — two answers can be in flight at once when
+   * someone answers quickly, and passing a stale `taken` list is how the same
+   * photo ends up in two slots.
+   *
+   * Nothing here is awaited by the conversation. A slow or failed match leaves
+   * its slots empty and Miles carries on; the board is the one part of this
+   * screen allowed to be late.
+   */
+  const boardRef = useRef(board);
+  boardRef.current = board;
+
+  const handleAnswer = useCallback(async (text: string, n: number) => {
+    if (n === 1) {
+      const name = firstName(text);
+      if (name) setBoard(b => ({ ...b, name }));
+      return;
+    }
+
+    const slots = slotsForAnswer(n);
+    if (!slots.length) return;
+
+    const fills = await fetchFills(text, slots.length, takenSlugs(boardRef.current));
+    if (!fills.length) return;
+
+    setBoard(b => {
+      const tiles = { ...b.tiles };
+      slots.forEach((slot, i) => {
+        const fill = fills[i];
+        // Only paint over an empty slot — a late match must never displace a
+        // tile a later answer already filled.
+        if (fill && tiles[slot].kind === 'empty') tiles[slot] = tileFor(fill);
+      });
+      return { ...b, tiles };
+    });
+  }, [setBoard]);
+
   const {
     phase, messages, answers, error, degraded,
     start, stop, sendText, bargeIn,
-  } = useLiveSession({ onComplete });
+  } = useLiveSession({ onComplete, onAnswer: handleAnswer });
 
   const [textInput, setTextInput] = useState('');
   const [inputMode, setInputMode] = useState<'voice' | 'text'>('voice');
@@ -297,14 +369,25 @@ function ChatScreen({ onComplete, onBack }: {
         </div>
       </div>
 
-      <div className="orb-stage">
-        <AudioOrb colorIndex={orbColor} mode={orbMode} getLevel={getOrbLevel} />
+      {/* The orb carries the name question; from the first answer on, the board
+          takes the same box and fills as the conversation goes. Same stage, so
+          the header and the dock never move. */}
+      {board.name === null ? (
+        <div className="orb-stage">
+          <AudioOrb colorIndex={orbColor} mode={orbMode} getLevel={getOrbLevel} />
 
-        {/* Screen readers get the question; the screen itself stays wordless. */}
-        <div className="gd-sr-only" aria-live="polite" aria-atomic="true">{spokenLine}</div>
+          {/* Screen readers get the question; the screen itself stays wordless. */}
+          <div className="gd-sr-only" aria-live="polite" aria-atomic="true">{spokenLine}</div>
 
-        {error && <div className="orb-error">{error}</div>}
-      </div>
+          {error && <div className="orb-error">{error}</div>}
+        </div>
+      ) : (
+        <div className="board-stage">
+          <DiscoveryBoard board={board} />
+          <div className="gd-sr-only" aria-live="polite" aria-atomic="true">{spokenLine}</div>
+          {error && <div className="orb-error">{error}</div>}
+        </div>
+      )}
 
       <div className="chat-dock" style={{ paddingBottom: 28 }}>
         {isListening && inputMode === 'voice' && <Waveform />}
@@ -395,12 +478,9 @@ function ChatScreen({ onComplete, onBack }: {
 // Design source: Figma "Ford Gotham Discovery" → Frame 1 (node 24:264).
 // Black canvas; tracked-caps config title overlapping the sunrise plate; bold
 // identity headline; narrative; steel CONTINUE pill; ghost START OVER.
-function RevealScreen({ reveal, onNext, onRestart }: {
-  reveal: GothamRevealPayload; onNext: () => void; onRestart: () => void;
+function RevealScreen({ reveal, board, onNext, onRestart }: {
+  reveal: GothamRevealPayload; board: BoardState; onNext: () => void; onRestart: () => void;
 }) {
-  const fs = reveal.future_self;
-  const config = safeConfig(fs.config_id);
-  const theme = themeFor(config);
   const spoken = useRef(false);
 
   /*
@@ -427,28 +507,19 @@ function RevealScreen({ reveal, onNext, onRestart }: {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // The config name is the hero title in this design (the chip is gone).
-  const configTitle = config ? CONFIG_LABELS[config] : 'Your next you';
-
   return (
     <div className="era-screen reveal-screen">
       <div className="reveal-inner">
-        <div className="reveal-hero-stack">
-          <h1 className="reveal-config-title">{configTitle}</h1>
-          <div className="reveal-hero-art" data-theme={theme}>
-            <div className="reveal-glow" aria-hidden="true" />
-          </div>
-        </div>
+        {/* The same board, with its last two slots closed: the tall right-hand
+            tile and the persona pill. Miles speaks the headline and narrative
+            over it, so neither is drawn here. */}
+        <DiscoveryBoard board={board} showPersona />
+        <div className="gd-sr-only">{`${board.persona ?? ''}. ${reveal.future_self.headline}. ${reveal.future_self.narrative}`}</div>
+      </div>
 
-        <div className="reveal-copy">
-          <h2 className="reveal-headline">{fs.headline}</h2>
-          <p className="reveal-narrative">{fs.narrative}</p>
-
-          <div className="reveal-ctas">
-            <button className="gd-pill reveal-continue" onClick={onNext}>Continue</button>
-            <button className="gd-ghost reveal-startover" onClick={onRestart}>Start over</button>
-          </div>
-        </div>
+      <div className="reveal-ctas">
+        <button className="gd-pill reveal-continue" onClick={onNext}>Continue</button>
+        <button className="gd-ghost reveal-startover" onClick={onRestart}>Start over</button>
       </div>
     </div>
   );
@@ -616,6 +687,13 @@ export default function DiscoverApp() {
   const [flowKey,      setFlowKey]      = useState(0);
   const [reveal,       setReveal]       = useState<GothamRevealPayload | null>(null);
   const [mobileFrame,  setMobileFrame]  = useState(false);
+  /*
+   * The board lives here, above both screens, because it is ONE board: the
+   * thing the customer watched fill during the conversation is the thing the
+   * reveal lands on. Rebuilding it at the reveal would throw away the tiles
+   * they already watched arrive.
+   */
+  const [board,        setBoard]        = useState<BoardState>(emptyBoard);
 
   useEffect(() => {
     setMobileFrame(localStorage.getItem('dyny-mobile-frame') === '1');
@@ -637,10 +715,22 @@ export default function DiscoverApp() {
     stopSpeech();
     setFlowKey(k => k + 1);
     setReveal(null);
+    setBoard(emptyBoard());
     go('landing');
   };
 
   const handleChatComplete = (r: GothamRevealPayload) => {
+    /*
+     * Close the board out. The persona pill takes the config the model landed
+     * on — the same one the share card reads — and the honest-match rule is
+     * relaxed just enough to guarantee the reveal shows photographs rather than
+     * a column of words.
+     */
+    const config = safeConfig(r?.future_self?.config_id);
+    setBoard(b => ensureMinimumImages({
+      ...b,
+      persona: config ? CONFIG_LABELS[config] : 'Your Next You',
+    }));
     setReveal(r);
     go('reveal');
   };
@@ -660,10 +750,12 @@ export default function DiscoverApp() {
             key={flowKey}
             onComplete={handleChatComplete}
             onBack={() => go('landing')}
+            board={board}
+            setBoard={setBoard}
           />
         )}
         {screen === 'reveal' && reveal && (
-          <RevealScreen reveal={reveal} onNext={() => go('capture')} onRestart={restart} />
+          <RevealScreen reveal={reveal} board={board} onNext={() => go('capture')} onRestart={restart} />
         )}
         {screen === 'capture' && reveal && (
           <CaptureScreen onNext={() => go('share')} onBack={() => go('reveal')} />

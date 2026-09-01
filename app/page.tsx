@@ -126,6 +126,13 @@ const UI_BACK  = '/ui/back-circle.svg';      // 41:681 — 61px circle + steel a
 const UI_OVAL  = '/brand/ford-oval.svg';     // 41:320 — Ford oval, dark variant
 const UI_FATHOM = '/brand/fathom-wordmark.svg'; // 46:360 — vehicle lockup
 
+// Intro frame, from the newer file ntdaHrZCrRGdtT6VcTYh9x (node 1:7). The lockup
+// here is a different cut from UI_FATHOM above — taller cap height, and it
+// carries the ™ — so the two are not interchangeable.
+const UI_KITE   = '/ui/intro/kite-circle.png'; // 1:124 — kite in a sky circle
+const UI_SUMMIT = '/ui/intro/summit-pill.png'; // 1:136 — summit photo pill
+const UI_LOCKUP = '/brand/fathom-lockup.png';  // 1:134 — FATHOM™ lockup
+
 // ─── PERSONALITY THEMES ──────────────────────────────────────────────────────
 // Figma ships two dressings of the reveal + social card, and they are a matched
 // pair: Personality 1 (Field Workshop) is a WARM sunrise behind a truck carrying
@@ -157,7 +164,7 @@ function BackButton({ onClick }: { onClick: () => void }) {
   );
 }
 
-// ─── LANDING SCREEN (Figma 41:548) ───────────────────────────────────────────
+// ─── LANDING SCREEN (Figma 1:7) ──────────────────────────────────────────────
 function LandingScreen({ mobileFrame, onToggleFrame, onStart }: {
   mobileFrame: boolean;
   onToggleFrame: () => void;
@@ -171,24 +178,28 @@ function LandingScreen({ mobileFrame, onToggleFrame, onStart }: {
       </button>
 
       <div className="landing-hero">
-        {/* The wordmark IS the chip row — the three pastels then return in the
-            same order as the orb's colours, one per question. */}
-        <h1 className="landing-chips">
-          <span className="landing-chip landing-chip-1">Fathom</span>
-          <span className="landing-chip landing-chip-2">Your</span>
-          <span className="landing-chip landing-chip-3">Future</span>
+        {/* Six tiles on Figma's two-column split. The words read "Find your
+            FATHOM" down the wide column; the kite, the summit and the Ford oval
+            fill the narrow one, so the headline and the picture of where it
+            takes you are the same object. The oval and the summit are brand and
+            mood furniture rather than words, so they stay out of the heading
+            text — a screen reader gets "Find your Fathom". */}
+        <h1 className="landing-bento">
+          <span className="landing-tile landing-find">Find</span>
+          <img className="landing-tile landing-kite" src={UI_KITE} alt="" aria-hidden="true" />
+          <span className="landing-tile landing-your">your</span>
+          <span className="landing-tile landing-lockup">
+            <img src={UI_LOCKUP} alt="Fathom" />
+          </span>
+          <img className="landing-tile landing-summit" src={UI_SUMMIT} alt="" aria-hidden="true" />
+          <span className="landing-tile landing-oval">
+            <img src={UI_OVAL} alt="" aria-hidden="true" />
+          </span>
         </h1>
+      </div>
 
-        <p className="landing-sub">
-          Let&apos;s keep you in the loop with the new Ford vehicle coming for a situation just like yours.
-        </p>
-
-        <div className="landing-cta-area">
-          <button className="gd-pill landing-cta" onClick={onStart}>Begin</button>
-          <div className="landing-status">
-            Your name and three questions • about 60 seconds
-          </div>
-        </div>
+      <div className="landing-cta-area">
+        <button className="gd-pill landing-cta" onClick={onStart}>Begin</button>
       </div>
     </div>
   );

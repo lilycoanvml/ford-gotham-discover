@@ -2,18 +2,20 @@
    DESIGN SYSTEM — Discover Your Next You (Ford / Gotham)
 
    Source of truth: Figma "Ford Gotham Discovery" (file Uj1ncN31RmfCDZnJxyoEly)
-     41:548  Intro            → landing (Begin now enters the chat directly;
-                                the 41:550 loading beat was cut)
      41:513  Chat             → chat
      24:264  Personality 1    → reveal
      33:282  Personality 2    → reveal (2-line title variant; authoritative spacing)
      41:398  Sign Up          → capture
      41:335  Social Card 1    → share
 
-   The Figma frames are 1440x1024. This is ONE mobile-first layout that scales up
-   to those reference sizes — every dimension below is the desktop value wrapped
-   in a clamp(), not a separate breakpoint. Ratios are preserved so the design
-   reads the same at 320px and at 1440px.
+   The intro screen has moved on from that file. It now comes from "Untitled"
+   (file ntdaHrZCrRGdtT6VcTYh9x), node 1:7 — a 279x604 phone rather than a
+   1440x1024 desktop frame. See the LANDING block for how that is scaled.
+
+   The older Figma frames are 1440x1024. This is ONE mobile-first layout that
+   scales up to those reference sizes — every dimension below is the desktop
+   value wrapped in a clamp(), not a separate breakpoint. Ratios are preserved
+   so the design reads the same at 320px and at 1440px.
    ═══════════════════════════════════════════════════════════════════════════ */
 
 :root {
@@ -144,74 +146,104 @@ button { font-family: inherit; -webkit-tap-highlight-color: transparent; }
 .gd-back:active { opacity:0.7; }
 
 /* ═══════════════════════════════════════════════════════════
-   LANDING — Figma 41:548
-   Reference column is 818px; the chip row is exactly 9.09em of the 90px
-   display size, so sizing the chips in em keeps all three on one line at
-   every width instead of wrapping on small phones.
+   LANDING — Figma 1:7 (file ntdaHrZCrRGdtT6VcTYh9x)
+
+   The intro frame is a 279x604 phone: a 390x844 device drawn at 71.5%. So the
+   design numbers below are frame px, and everything is expressed as a fraction
+   of --col (Figma's 243px content column) rather than as its own clamp. That
+   keeps the six tiles locked to one grid — the 165 / 15 / 63 split holds at
+   every width, so the block scales as a unit instead of drifting apart.
+
+   The named file variables are Aerial Blue #889FAF and Serene Green #B4C4A5;
+   they land within a couple of hex points of --gd-steel / --gd-sage, so the
+   existing tokens carry them rather than forking the palette.
    ═══════════════════════════════════════════════════════════ */
-.landing-screen { background:var(--gd-black); }
+.landing-screen {
+  background:var(--gd-black);
 
-/* Figma 41:617 is a single vertically-centred column of five rows with a
-   uniform 25px gap — headline, chips, sub, BEGIN, status. Not a hero block
-   with the CTA pinned to the bottom. */
+  /* 243 of the 279 frame. Capped so the phone design does not run to billboard
+     scale on a desktop window — 560px puts "Find" at ~85px, the size the old
+     1440-wide hero headline ran at. */
+  --col:      min(87.1cqw, 560px);
+  --col-gap:  calc(var(--col) * 0.0617); /* 15 */
+  --row-gap:  calc(var(--col) * 0.0576); /* 14 */
+  --tile-h:   calc(var(--col) * 0.2551); /* 62 */
+  --tile-w:   calc(var(--col) * 0.6790); /* 165 */
+  --tile-dot: calc(var(--col) * 0.2593); /* 63 */
+}
+
+/* The bento sits in the space above the CTA. Figma has it 105 from the top and
+   149 clear of BEGIN; centring splits that to 127/127, which is a 22px shift on
+   a 604 frame and holds up far better on short and tall viewports. */
 .landing-hero {
-  flex:1; display:flex; flex-direction:column;
-  align-items:center; justify-content:center;
-  gap:clamp(10px, 2.4cqw, 25px);
-  width:100%; max-width:858px; /* 818 + 2x20 gutter */
-  margin:0 auto; padding:20px; text-align:center; position:relative; z-index:1;
-
-  /* Headline and chips are both 90px in Figma and read as one sentence, so they
-     share a scale. The CHIP ROW is what binds it: three words side by side need
-     ~9.1em of width, so the scale is set from that, leaving ~20% of the column
-     as margin instead of running to the edges. */
-  --gd-hero-size: clamp(20px, calc(8.4cqw - 3px), 90px);
+  flex:1; display:flex; align-items:center; justify-content:center;
+  width:100%; padding:20px; position:relative; z-index:1;
 }
-/* Fathom / Your / Future — the chip row IS the wordmark. Em-sized so it scales
-   as one unit; the three words total ~10.1em, the width the hero scale assumes.
-   That is up from ~9.1em when this read "Find Your Fathom": the row sits at
-   roughly 85% of the container rather than 76%, which still clears both ends of
-   the clamp, so the scale below is unchanged. Retune 8.4cqw if the copy grows
-   again. */
-.landing-chips {
-  display:flex; align-items:flex-end; justify-content:center;
-  flex-wrap:nowrap; width:100%;
-  font-size:var(--gd-hero-size);  /* the chips' own type scale */
-  gap:0.233em;                    /* 21px @ 90px */
-  max-width:100%;
-  animation: fadeUp 0.7s ease-out both 0.24s;
+
+/* Six tiles, two columns: 165 + 15 + 63 = 243, so the widths total exactly 100%
+   of --col and the right edge lines up down all four rows. */
+.landing-bento {
+  display:grid;
+  grid-template-columns:var(--tile-w) var(--tile-dot);
+  grid-auto-rows:var(--tile-h);
+  gap:var(--row-gap) var(--col-gap);
+  width:var(--col);
   margin:0; font-weight:400; letter-spacing:normal;
+  animation: fadeUp 0.7s ease-out both 0.24s;
 }
-.landing-chip {
+.landing-tile {
   display:flex; align-items:center; justify-content:center;
-  padding:0.4em 0.378em;              /* 36px / 34px @ 90px */
-  font-family:var(--font-display); font-style:normal; font-weight:400;
-  font-size:1em; line-height:1; color:var(--gd-black);
-  white-space:nowrap; flex-shrink:0;
+  border-radius:100px; overflow:hidden;
 }
-.landing-chip-1 { background:var(--gd-steel); border-radius:0.556em; } /* 50px  */
-.landing-chip-2 { background:var(--gd-terra); border-radius:100px; }   /* pill  */
-.landing-chip-3 { background:var(--gd-sage);  border-radius:100px; }   /* pill  */
-
-.landing-sub {
-  font-family:var(--font-display); font-style:italic; font-weight:400;
-  font-size:clamp(13px, 1.9cqw, 20px); line-height:1.2;
-  color:var(--gd-grey); max-width:32em;
-  animation: fadeUp 0.7s ease-out both 0.38s;
+/* "Find" and "your" are one 37px American Grotesk Bold setting on #1B2026 —
+   the near-black Figma uses on the pastels, not a flat #000. */
+.landing-find, .landing-your {
+  font-family:var(--font-display); font-style:normal; font-weight:700;
+  font-size:calc(var(--col) * 0.1523); /* 37 */
+  line-height:1; letter-spacing:-0.01em; /* -0.37px at 37 */
+  color:#1B2026; white-space:nowrap;
+}
+.landing-find { grid-area:1 / 1; background:var(--gd-sage); }
+.landing-kite { grid-area:1 / 2; width:var(--tile-dot); height:var(--tile-h); border-radius:50%; object-fit:cover; }
+/* "your" is 165 wide but flushes to the content column's right edge, so it
+   spans both columns and justifies to the end rather than sitting in column 1. */
+.landing-your {
+  grid-area:2 / 1 / 3 / -1;
+  justify-self:end; width:var(--tile-w);
+  background:var(--gd-terra);
+}
+.landing-lockup { grid-area:3 / 1 / 4 / -1; background:var(--gd-steel); }
+/* Figma insets the glyphs 4.19% into a 207px box; centring the leaf in the pill
+   lands within a pixel of that and stays symmetric. Height is derived from the
+   asset's own 14.11:1 aspect so the letterforms never stretch. */
+.landing-lockup > img {
+  display:block;
+  width:calc(var(--col) * 0.8074);  /* 196.2 */
+  height:calc(var(--col) * 0.0572);
+}
+.landing-summit { grid-area:4 / 1; width:var(--tile-w); height:var(--tile-h); object-fit:cover; }
+.landing-oval   { grid-area:4 / 2; background:var(--gd-terra); border-radius:50%; }
+.landing-oval > img {
+  display:block;
+  width:calc(var(--col) * 0.2099);  /* 51 */
+  height:calc(var(--col) * 0.0782); /* 19 */
+  opacity:0.8;                      /* Figma 3:176 */
 }
 
 .landing-cta-area {
-  width:100%;
-  display:flex; flex-direction:column; align-items:center;
-  gap:clamp(10px, 2.4cqw, 25px);
+  width:100%; display:flex; justify-content:center;
+  padding:0 20px min(10.4cqw, 56px); /* 29 below the button */
   animation: fadeUp 0.7s ease-out both 0.52s;
 }
-/* Figma height is 84px — tall and confident, so it gets its own size */
-.landing-cta { height:clamp(56px, 5.8cqw, 84px); }
-.landing-status {
-  font-family:var(--font-display); font-weight:400;
-  font-size:clamp(13px, 1.9cqw, 20px); line-height:1.2;
-  color:var(--gd-grey); text-align:center;
+/* BEGIN is 121x30 with white 16px Arial Bold at normal tracking — so it opts out
+   of .gd-pill's tracked-caps treatment and its drop-shadow, both of which the
+   frame drops. min-height stays as the tap-target floor. */
+.landing-cta {
+  width:calc(var(--col) * 0.4979);   /* 121 */
+  height:calc(var(--col) * 0.1235);  /* 30  */
+  font-weight:700; font-size:calc(var(--col) * 0.0658); /* 16 */
+  letter-spacing:-0.01em; text-indent:0;
+  color:#FFFFFF; filter:none;
 }
 
 /* Demo-only viewport toggle. Not in the Figma frames — kept as a faint ghost
@@ -665,7 +697,7 @@ body:has(#era-app.mobile-frame) {
 
 /* ── Reduced motion: calm the staged beats ── */
 @media (prefers-reduced-motion: reduce) {
-  .landing-chips, .landing-sub, .landing-cta-area,
+  .landing-bento, .landing-cta-area,
   .chat-avatar { animation:none !important; }
   /* The orb itself stops in AudioOrb.tsx — it paints one static frame rather
      than running the loop, so there is no CSS animation here to cancel. */

@@ -598,7 +598,13 @@ button { font-family: inherit; -webkit-tap-highlight-color: transparent; }
   font-size:clamp(12.5px, 1.05cqw, 15px); line-height:1.35;
   color:var(--gd-grey); max-width:34em;
 }
-.capture-field { width:100%; }
+/* Two inputs now — email above phone — stacked with the same rhythm the rest of
+   the column uses. */
+.capture-field {
+  width:100%;
+  display:flex; flex-direction:column;
+  gap:clamp(8px, 1.2cqw, 12px);
+}
 .capture-field input {
   width:100%; height:clamp(46px, 3.5cqw, 50px);
   padding:0 24px; border-radius:100px;

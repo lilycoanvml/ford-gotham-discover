@@ -11,7 +11,7 @@ import {
   speak, stopSpeech,
 } from '@/app/frontend/lib/audio';
 import { REVEAL_FOLLOW_UP } from '@/app/lib/script';
-import { isValidContact } from '@/app/lib/contact';
+import { isEmail, isPhone } from '@/app/lib/contact';
 import DiscoveryBoard from '@/app/frontend/components/DiscoveryBoard';
 import {
   emptyBoard, ensureMinimumImages, fetchFills, slotsForAnswer, takenSlugs, tileFor,
@@ -537,11 +537,27 @@ function RevealScreen({ reveal, board, onNext, onRestart }: {
 function CaptureScreen({ onNext, onBack }: {
   onNext: () => void; onBack: () => void;
 }) {
-  const [contact, setContact] = useState('');
+  const [email, setEmail] = useState('');
+  const [phone, setPhone] = useState('');
   const [status, setStatus] = useState<'idle' | 'sending' | 'error'>('idle');
-  // One field takes either. The rule lives in app/lib/contact.ts so this and
-  // /api/subscribe cannot drift apart about what counts as valid.
-  const valid = isValidContact(contact);
+
+  /*
+   * Two fields, but the copy says "email or phone number" — so either one on
+   * its own is enough, and whichever they DO fill has to be a real one. The
+   * rules live in app/lib/contact.ts so this and /api/subscribe cannot drift
+   * apart about what counts as valid.
+   */
+  const hasEmail = email.trim().length > 0;
+  const hasPhone = phone.trim().length > 0;
+  const emailOk = hasEmail && isEmail(email);
+  const phoneOk = hasPhone && isPhone(phone);
+  const valid = (emailOk || phoneOk) && (!hasEmail || emailOk) && (!hasPhone || phoneOk);
+
+  // Name the field that is actually wrong rather than making them guess.
+  const errorMsg =
+      hasEmail && !emailOk ? 'Please enter a valid email.'
+    : hasPhone && !phoneOk ? 'Please enter a valid phone number.'
+    : 'Enter an email or a phone number.';
 
   const submit = async () => {
     if (!valid) { setStatus('error'); return; }
@@ -550,7 +566,7 @@ function CaptureScreen({ onNext, onBack }: {
       await fetch('/api/subscribe', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ contact: contact.trim() }),
+        body: JSON.stringify({ email: email.trim(), phone: phone.trim() }),
       });
     } catch { /* stub — proceed regardless */ }
     onNext();
@@ -563,37 +579,46 @@ function CaptureScreen({ onNext, onBack }: {
       </div>
 
       <div className="capture-inner">
-        <div className="capture-label">The reveal is coming</div>
-        <h2 className="capture-title">Be the first to see it.</h2>
+        <h2 className="capture-title">Get the Invite</h2>
         <p className="capture-sub">
-          Enter your phone number or email for updates.
+          Give us your email or phone number and we&apos;ll put you on the pre-order
+          list. No obligation. You&apos;ll get all the latest info
         </p>
 
+        {/* Split back into two fields, which lets each one ask for the right
+            keyboard and offer the right autofill — a single combined field could
+            do neither. */}
         <div className="capture-field">
-          {/* type=text, not tel: a numeric keypad cannot produce an "@", and the
-              field now has to accept both. autoComplete is off because the
-              browser cannot know which of the two this wants and was offering
-              stray digits from unrelated saved fields. */}
           <input
-            type="text"
-            inputMode="text"
-            autoComplete="off"
-            value={contact}
-            onChange={e => { setContact(e.target.value); if (status === 'error') setStatus('idle'); }}
+            type="email"
+            inputMode="email"
+            autoComplete="email"
+            value={email}
+            onChange={e => { setEmail(e.target.value); if (status === 'error') setStatus('idle'); }}
             onKeyDown={e => e.key === 'Enter' && submit()}
-            placeholder="(555) 123-4567 or you@email.com"
-            aria-label="Phone number or email"
+            placeholder="Email"
+            aria-label="Email"
           />
-          {status === 'error' && <div className="capture-error">Please enter a valid phone number or email.</div>}
+          <input
+            type="tel"
+            inputMode="tel"
+            autoComplete="tel"
+            value={phone}
+            onChange={e => { setPhone(e.target.value); if (status === 'error') setStatus('idle'); }}
+            onKeyDown={e => e.key === 'Enter' && submit()}
+            placeholder="Phone number"
+            aria-label="Phone number"
+          />
+          {status === 'error' && <div className="capture-error">{errorMsg}</div>}
         </div>
 
         <div className="capture-ctas">
           <button
             className="gd-pill capture-keep"
             onClick={submit}
-            disabled={status === 'sending' || !contact.trim()}
+            disabled={status === 'sending' || (!hasEmail && !hasPhone)}
           >
-            {status === 'sending' ? 'One moment…' : 'Keep me updated'}
+            {status === 'sending' ? 'One moment…' : 'Share with Friends'}
           </button>
           <button className="gd-ghost" onClick={onNext}>Skip for now</button>
         </div>

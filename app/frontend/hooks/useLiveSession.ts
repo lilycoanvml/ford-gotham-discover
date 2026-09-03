@@ -53,6 +53,13 @@ const ALLOW_BARGE_IN = true;
 // as a remark followed by a question rather than one run-on sentence.
 const BEAT_MS = 260;
 
+/*
+ * How long to wait for queued speech to finish before moving on regardless.
+ * Generous enough for any real line Miles speaks, short enough that a wedged
+ * audio context costs a pause rather than the rest of the conversation.
+ */
+const DRAIN_TIMEOUT_MS = 15000;
+
 export interface LiveSessionOptions {
   onComplete: (
     reveal: GothamRevealPayload,
@@ -90,6 +97,8 @@ export function useLiveSession({ onComplete, onAnswer }: LiveSessionOptions) {
   const heardRef    = useRef('');   // what the user is saying
   const saidRef     = useRef('');   // what Miles is saying
   const answersRef  = useRef(0);
+  // Deadline for the hand-off, armed only while waiting on queued speech.
+  const finishTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Held in a ref rather than a dependency: re-creating closeUserTurn on every
   // parent render would tear down the socket handlers mid-conversation.
   const onAnswerRef = useRef(onAnswer);
@@ -142,16 +151,41 @@ export function useLiveSession({ onComplete, onAnswer }: LiveSessionOptions) {
     return history;
   }, []);
 
-  const finishIfReady = useCallback(() => {
+  const completeNow = useCallback(() => {
     if (doneRef.current) return;
     const payload = revealRef.current;
     if (!payload) return;
-    const player = playerRef.current;
-    if (player?.speaking) return;      // never cut Miles off mid-sentence
+    if (finishTimerRef.current) { clearTimeout(finishTimerRef.current); finishTimerRef.current = null; }
     doneRef.current = true;
     const transcript = buildTranscript();
     setTimeout(() => onComplete(payload, transcript), 400);
   }, [buildTranscript, onComplete]);
+
+  /*
+   * Hand off once the reveal has landed AND Miles has stopped talking.
+   *
+   * Deferring is re-triggered when the queue drains, but that signal comes from
+   * onended, which a wedged audio context never fires — and then the customer
+   * sits on a finished board forever with nothing coming. So the deferral arms
+   * a deadline: worst case the tail of a line is clipped, which beats the flow
+   * never moving at all.
+   */
+  const finishIfReady = useCallback(() => {
+    if (doneRef.current) return;
+    if (!revealRef.current) return;
+    const player = playerRef.current;
+    if (player?.speaking) {          // never cut Miles off mid-sentence
+      if (!finishTimerRef.current) {
+        finishTimerRef.current = setTimeout(() => {
+          finishTimerRef.current = null;
+          console.warn('[live] hand-off deadline reached with audio still queued');
+          completeNow();
+        }, DRAIN_TIMEOUT_MS);
+      }
+      return;
+    }
+    completeNow();
+  }, [completeNow]);
 
   const requestReveal = useCallback(async () => {
     revealWaitRef.current = true;
@@ -239,9 +273,22 @@ export function useLiveSession({ onComplete, onAnswer }: LiveSessionOptions) {
     saidRef.current = '';
     if (said) push('assistant', said);
 
-    // turnEnd means Gemini stopped generating, not that the speakers are quiet.
+    /*
+     * turnEnd means Gemini stopped generating, not that the speakers are quiet,
+     * so wait for the queue to drain before handing the floor back.
+     *
+     * Bounded, because this used to be a bare `while` and it is the whole
+     * conversation's critical path: anything that leaves `speaking` stuck true
+     * — a suspended audio context being the obvious one — stalled the session
+     * here with no way out, and the next question was simply never asked.
+     * Cutting the tail of a line is a far smaller failure than freezing.
+     */
     const player = playerRef.current;
-    while (player?.speaking) await new Promise(r => setTimeout(r, 80));
+    const deadline = Date.now() + DRAIN_TIMEOUT_MS;
+    while (player?.speaking && Date.now() < deadline) {
+      await new Promise(r => setTimeout(r, 80));
+    }
+    if (player?.speaking) console.warn('[live] audio queue did not drain — continuing anyway');
     setMicStrict(false);
 
     if (revealWaitRef.current) { setPhase('revealing'); finishIfReady(); return; }
@@ -510,6 +557,7 @@ export function useLiveSession({ onComplete, onAnswer }: LiveSessionOptions) {
 
   const stop = useCallback(() => {
     stopSpeech();
+    if (finishTimerRef.current) { clearTimeout(finishTimerRef.current); finishTimerRef.current = null; }
     playerRef.current?.flush();
     detachMicAnalyser();
     try { wsRef.current?.close(); } catch { /* already closed */ }

@@ -321,16 +321,37 @@ export class LivePlayer {
   private sources: AudioBufferSourceNode[] = [];
   private rate: number;
   private onIdle?: () => void;
+  /*
+   * The odd trailing byte of a frame, waiting for the next one.
+   *
+   * Each binary frame is one base64-decoded inlineData part from Gemini, and
+   * nothing guarantees a part ends on a sample boundary. Decoding frames
+   * independently dropped that trailing byte, which left the NEXT frame parsing
+   * every sample from the high byte of one and the low byte of the next — a
+   * loud buzz for the length of that frame, clearing only when another odd
+   * frame happened to put it back in phase.
+   *
+   * playPcmStream already does this for the HTTP path; the socket path needs it
+   * for the same reason.
+   */
+  private carry = new Uint8Array(0);
 
   constructor(rate = 24000, onIdle?: () => void) {
     this.rate = rate;
     this.onIdle = onIdle;
   }
 
-  /** True while audio is queued at or ahead of the context clock. */
+  /*
+   * True while audio is queued at or ahead of the context clock.
+   *
+   * A suspended context does not count. Its currentTime stops advancing while
+   * the playhead stays where it was, so this would read true forever, and the
+   * callers that wait on it would wait forever with it.
+   */
   get speaking(): boolean {
     const ctx = getAudioContext();
-    return !!ctx && this.playhead > ctx.currentTime + 0.02;
+    if (!ctx || ctx.state !== 'running') return false;
+    return this.playhead > ctx.currentTime + 0.02;
   }
 
   /** Seconds until the queued audio runs out. */
@@ -346,8 +367,26 @@ export class LivePlayer {
     if (!ctx) return;
     if (ctx.state === 'suspended') void ctx.resume();
 
-    const samples = decodePcm(pcm);
-    if (!samples.length) return;
+    // Re-join whatever the last frame left dangling before decoding.
+    const incoming = new Uint8Array(pcm);
+    let bytes: Uint8Array;
+    if (this.carry.length) {
+      bytes = new Uint8Array(this.carry.length + incoming.length);
+      bytes.set(this.carry, 0);
+      bytes.set(incoming, this.carry.length);
+    } else {
+      bytes = incoming;
+    }
+
+    const usable = bytes.length - (bytes.length % 2);
+    this.carry = usable === bytes.length
+      ? new Uint8Array(0)
+      : bytes.slice(usable);          // copy: `bytes` may be the frame's own memory
+    if (!usable) return;
+
+    const view = new DataView(bytes.buffer, bytes.byteOffset, usable);
+    const samples = new Float32Array(usable / 2);
+    for (let i = 0; i < samples.length; i++) samples[i] = view.getInt16(i * 2, true) / 32768;
 
     const buffer = ctx.createBuffer(1, samples.length, this.rate);
     buffer.copyToChannel(samples, 0);
@@ -372,6 +411,9 @@ export class LivePlayer {
   flush() {
     for (const src of this.sources) { try { src.onended = null; src.stop(); } catch { /* ended */ } }
     this.sources = [];
+    // The half sample belonged to the utterance being dropped. Carrying it into
+    // the next one would put that one out of phase from its first frame.
+    this.carry = new Uint8Array(0);
     const ctx = getAudioContext();
     this.playhead = ctx ? ctx.currentTime : 0;
   }

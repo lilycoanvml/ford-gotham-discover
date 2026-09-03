@@ -34,3 +34,11 @@ next-env.d.ts
 
 # Design reference / prototype files (not production code)
 *.zip
+
+# Source material, not deliverables. public/reveal/fathom-surfboard.jpg is the
+# baked copy that ships; the 1.7MB original stays local. The order guide is an
+# internal Ford document and must not be committed — its facts live in
+# REVEAL_PROMPT, the file itself does not belong in the repo.
+app/*.doc
+app/*.docx
+app/Fathom w surfboard mobile.png

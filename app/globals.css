@@ -572,15 +572,32 @@ button { font-family: inherit; -webkit-tap-highlight-color: transparent; }
 /* ═══════════════════════════════════════════════════════════
    CAPTURE / SIGN UP — Figma 41:398
    ═══════════════════════════════════════════════════════════ */
-.capture-screen { background:var(--gd-black); }
+.capture-screen {
+  background:var(--gd-black);
+  /* No cqh term here: the invite is the one screen taller than its viewport on a
+     short window, and it is allowed to scroll rather than shrink the vehicle. */
+  --col: min(87.1cqw, 420px);
+}
+
+/* Figma 46:19 — the vehicle photograph, the invite's hero. Content column wide
+   and running at its own 928x1152, which lands on the 302 tall the frame draws
+   without cropping anything. */
+.capture-hero {
+  width:var(--col); max-width:100%;
+  aspect-ratio:928 / 1152;
+  object-fit:cover;
+  border-radius:calc(var(--col) * 0.082); /* ~20 in the frame */
+  display:block; flex-shrink:0;
+  animation: fadeUp 0.7s ease-out both 0.1s;
+}
 .gd-topbar { padding:clamp(14px, 2.2cqw, 32px) clamp(16px, 3.3cqw, 48px); flex-shrink:0; }
 
 .capture-inner {
   flex:1; display:flex; flex-direction:column; justify-content:center;
   align-items:center; text-align:center;
   width:100%; max-width:610px; /* 570 + 2x20 */
-  margin:0 auto; padding:0 20px clamp(32px, 5cqw, 64px);
-  gap:clamp(16px, 2.6cqw, 25px);
+  margin:0 auto; padding:0 20px clamp(20px, 5cqw, 64px);
+  gap:clamp(12px, 2.6cqw, 25px);
 }
 .capture-label {
   font-family:var(--font-display); font-weight:400;
@@ -832,7 +849,7 @@ body:has(#era-app.mobile-frame) {
 @media (prefers-reduced-motion: reduce) {
   .landing-bento, .landing-cta-area,
   .reveal-inner .board, .reveal-ctas, .board-tile.is-filled,
-  .chat-avatar { animation:none !important; }
+  .capture-hero, .chat-avatar { animation:none !important; }
   /* The orb itself stops in AudioOrb.tsx — it paints one static frame rather
      than running the loop, so there is no CSS animation here to cancel. */
 }

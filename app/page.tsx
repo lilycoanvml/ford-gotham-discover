@@ -49,6 +49,19 @@ const CLOSING_FALLBACK =
   "Want to stay in the loop as we build the perfect vehicle for where you're headed?";
 
 /*
+ * Spoken on the invite screen if the model's vehiclePitch is missing or looks
+ * like template text. It names the vehicle and stops — it cannot say why the
+ * truck suits THEM, because there is no payload to read their answers from.
+ */
+const PITCH_FALLBACK =
+  "Here's the Ford Fathom. All electric, with a steel bed, a front trunk, and enough power onboard to run your gear wherever you take it.";
+
+function sanitizeVehiclePitch(msg: string | undefined): string {
+  if (!msg || msg.startsWith('[') || msg.length > 400) return PITCH_FALLBACK;
+  return msg.replace(/\[.*?\]/g, '').trim() || PITCH_FALLBACK;
+}
+
+/*
  * The gap between the closing line and the follow-up.
  *
  * The closing line ends on a question — "want to stay in the loop?" — so this
@@ -150,6 +163,11 @@ const UI_FATHOM = '/brand/fathom-wordmark.svg'; // 46:360 — vehicle lockup
    them. Same object the reveal plates 25:268 / 33:287 show. */
 const UI_CAR_WARM = '/reveal/card-warm.png';
 const UI_CAR_COOL = '/reveal/plate-cool.png';
+
+/* Figma 46:19 — the Fathom at the beach, the invite screen's hero. Downscaled
+   from app/"Fathom w surfboard mobile.png" (928x1152, 1.7MB) to something a
+   phone should actually download. */
+const UI_FATHOM_PHOTO = '/reveal/fathom-surfboard.jpg';
 
 // Intro frame, from the newer file ntdaHrZCrRGdtT6VcTYh9x (node 1:7). The lockup
 // here is a different cut from UI_FATHOM above — taller cap height, and it
@@ -526,9 +544,26 @@ function RevealScreen({ reveal, board, onNext, onRestart }: {
 }
 
 // ─── CAPTURE / SIGN UP SCREEN (Figma 41:398) — phone number, skippable ────────
-function CaptureScreen({ onNext, onBack }: {
-  onNext: () => void; onBack: () => void;
+function CaptureScreen({ reveal, onNext, onBack }: {
+  reveal: GothamRevealPayload; onNext: () => void; onBack: () => void;
 }) {
+  /*
+   * Miles introduces the truck over its photograph. Same staging as the reveal:
+   * a beat after the screen lands so the image is up before he starts, and the
+   * guard sits INSIDE the timer so StrictMode's mount/cleanup/mount does not
+   * clear the first timer and short-circuit the second.
+   */
+  const pitched = useRef(false);
+  useEffect(() => {
+    const t = setTimeout(() => {
+      if (pitched.current) return;
+      pitched.current = true;
+      speak(sanitizeVehiclePitch(reveal.vehiclePitch));
+    }, 650);
+    return () => { clearTimeout(t); stopSpeech(); };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
   const [status, setStatus] = useState<'idle' | 'sending' | 'error'>('idle');
@@ -571,6 +606,14 @@ function CaptureScreen({ onNext, onBack }: {
       </div>
 
       <div className="capture-inner">
+        {/* Figma 46:19 — the vehicle, at the content column's width and its own
+            aspect, which is the height the frame draws. */}
+        <img
+          className="capture-hero"
+          src={UI_FATHOM_PHOTO}
+          alt="The Ford Fathom parked by the beach, surfboards on the roof rack"
+        />
+
         <h2 className="capture-title">Get the Invite</h2>
         <p className="capture-sub">
           Give us your email or phone number and we&apos;ll put you on the pre-order
@@ -791,7 +834,7 @@ export default function DiscoverApp() {
           <RevealScreen reveal={reveal} board={board} onNext={() => go('capture')} onRestart={restart} />
         )}
         {screen === 'capture' && reveal && (
-          <CaptureScreen onNext={() => go('share')} onBack={() => go('reveal')} />
+          <CaptureScreen reveal={reveal} onNext={() => go('share')} onBack={() => go('reveal')} />
         )}
         {screen === 'share' && reveal && (
           <ShareScreen reveal={reveal} onRestart={restart} onBack={() => go('capture')} />

@@ -17,3 +17,10 @@ tests/
 public/ui/orbReference
 Dockerfile
 .dockerignore
+
+# Source material for the bake, not runtime assets. public/reveal/fathom-surfboard.jpg
+# is what ships; the 1.7MB original does not need to. The order guide is an
+# internal Ford document and has no business inside a deployed container.
+app/*.doc
+app/*.docx
+app/Fathom w surfboard mobile.png

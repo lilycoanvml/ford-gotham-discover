@@ -35,4 +35,13 @@ export interface GothamRevealPayload {
   future_self: FutureSelf;
   caption: string;
   closingMessage: string;
+  /*
+   * Spoken on the invite screen, over the photograph of the vehicle. The one
+   * place Miles is allowed to talk about the truck itself — and only from the
+   * approved facts in REVEAL_PROMPT, never invented numbers.
+   *
+   * Optional: an older payload from a session in flight during a deploy will
+   * not have it, and the screen falls back rather than going silent.
+   */
+  vehiclePitch?: string;
 }

@@ -34,7 +34,6 @@ export interface GothamRevealPayload {
   type: 'gotham_reveal';
   future_self: FutureSelf;
   caption: string;
-  closingMessage: string;
   /*
    * Spoken on the invite screen, over the photograph of the vehicle. The one
    * place Miles is allowed to talk about the truck itself — and only from the

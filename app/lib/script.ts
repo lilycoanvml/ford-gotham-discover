@@ -20,10 +20,9 @@ export const OPENING_LINE: string = script.openingLine;
 export const QUESTIONS = script.questions as readonly string[];
 
 /*
- * Spoken a beat after the reveal's closing line. The closing line is written by
- * the model and ends on "want to stay in the loop?", which leaves the customer
- * agreeing to something with no obvious next move. This is the move: it names
- * the button and what it asks for.
+ * Spoken a beat after Miles introduces the vehicle on the invite screen. His
+ * pitch is written by the model and deliberately asks for nothing; this is the
+ * ask, and it is fixed so the promise about what we collect never varies.
  *
  * Fixed rather than model-written on purpose — it is the one line that makes a
  * promise about what we collect, so it must name both options the capture screen

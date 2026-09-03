@@ -36,15 +36,8 @@ function TileView({ tile, slot }: { tile: Tile; slot: string }) {
   return <span className={`board-tile board-${slot}`} aria-hidden="true" />;
 }
 
-export default function DiscoveryBoard({
-  board,
-  showPersona = false,
-}: {
-  board: BoardState;
-  /** The persona pill only carries its title once the reveal lands. */
-  showPersona?: boolean;
-}) {
-  const { name, persona, tiles } = board;
+export default function DiscoveryBoard({ board }: { board: BoardState }) {
+  const { name, tiles } = board;
 
   return (
     <div className="board">
@@ -74,9 +67,8 @@ export default function DiscoveryBoard({
         </div>
       </div>
 
-      <span className={`board-tile board-persona${showPersona && persona ? ' is-filled' : ''}`}>
-        {showPersona ? persona ?? '' : ''}
-      </span>
+      {/* Sits apart from the block above it, the way the frame draws it. */}
+      <TileView tile={tiles.full2} slot="full board-lead" />
     </div>
   );
 }

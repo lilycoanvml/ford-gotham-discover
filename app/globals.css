@@ -325,17 +325,10 @@ button { font-family: inherit; -webkit-tap-highlight-color: transparent; }
   background:var(--gd-sage);
   font-size:calc(var(--col) * 0.1235); /* 30 */
 }
-.board-persona {
-  width:var(--col); margin-top:calc(var(--b-lead) - var(--b-block));
-  background:var(--gd-steel);
-  /* 27 in the frame for "Swell Dweller". The real config names run longer
-     ("Overland Trailblazer"), so this is a touch tighter and allowed to take a
-     second line — two lines still clear the pill's height. */
-  font-size:calc(var(--col) * 0.1000);
-  line-height:1.04;
-  padding:0 calc(var(--col) * 0.05);
-  text-wrap:balance;
-}
+/* The bottom full-width slot. It used to carry a persona title; it takes a
+   photo or a word like every other tile now, but keeps the wider gap above it
+   that the frame draws, which is what stops the board reading as one slab. */
+.board-lead { margin-top:calc(var(--b-lead) - var(--b-block)); }
 /* A word fill sits on the slot's own pastel — the design never gives words a
    colour of their own, which is what lets a word and a photo share a row
    without the board looking like two different systems. */
@@ -515,59 +508,6 @@ button { font-family: inherit; -webkit-tap-highlight-color: transparent; }
 }
 .chat-text-input button:hover:not(:disabled) { transform:translateY(-1px) scale(1.03); }
 .chat-text-input button:disabled { opacity:0.35; cursor:not-allowed; }
-
-/* ═══════════════════════════════════════════════════════════
-   REVEAL — Figma 1:146 (file ntdaHrZCrRGdtT6VcTYh9x)
-
-   The reveal is now the board the customer already watched fill, with its last
-   two slots closed: the tall right-hand tile, and the persona pill along the
-   bottom. There is no plate, no silhouette and no narrative paragraph on screen
-   any more — Miles still SPEAKS the closing line and the follow-up, so the copy
-   did not go away, it just stopped being duplicated in text.
-
-   The share card still reads config_id, headline and the warm/cool theme, so
-   none of that machinery moved; only what this screen draws changed.
-   ═══════════════════════════════════════════════════════════ */
-.reveal-screen {
-  background:var(--gd-black);
-  /* Tighter than the shared column: this screen shares its height with two
-     CTAs below the board. */
-  --col: min(87.1cqw, 34cqh, 520px);
-}
-
-.reveal-inner {
-  flex:1; min-height:0;
-  display:flex; flex-direction:column;
-  align-items:center; justify-content:center;
-  width:100%; margin:0 auto;
-  padding:clamp(16px, 3cqw, 32px) 20px;
-}
-/* Staged behind the closing line, which starts at 700ms — the board should be
-   settling as he begins speaking, not before he opens his mouth. */
-.reveal-inner .board { animation: fadeUp 0.7s ease-out both 0.30s; }
-
-.reveal-ctas {
-  display:flex; flex-direction:column; align-items:center;
-  gap:calc(var(--col) * 0.045);
-  width:100%; flex-shrink:0;
-  padding:0 20px min(10.4cqw, 56px);
-  animation: fadeUp 0.7s ease-out both 0.95s;
-}
-/* Matches the intro's BEGIN exactly — 121x30, white, untracked. The two are the
-   same button in the customer's mind, so they are the same button on screen. */
-.reveal-continue {
-  width:calc(var(--col) * 0.4979);  /* 121 */
-  height:calc(var(--col) * 0.1235); /* 30  */
-  font-weight:700; font-size:calc(var(--col) * 0.0658); /* 16 */
-  letter-spacing:-0.01em; text-indent:0;
-  color:#FFFFFF; filter:none;
-}
-/* Deliberately quieter: this is the way back, not the way on. Not in the frame
-   — added because a reveal with no exit strands anyone the matcher read wrong. */
-.reveal-startover {
-  font-size:calc(var(--col) * 0.052);
-  letter-spacing:0.14em; text-indent:0.14em;
-}
 
 /* ═══════════════════════════════════════════════════════════
    CAPTURE / SIGN UP — Figma 41:398
@@ -847,8 +787,7 @@ body:has(#era-app.mobile-frame) {
 
 /* ── Reduced motion: calm the staged beats ── */
 @media (prefers-reduced-motion: reduce) {
-  .landing-bento, .landing-cta-area,
-  .reveal-inner .board, .reveal-ctas, .board-tile.is-filled,
+  .landing-bento, .landing-cta-area, .board-tile.is-filled,
   .capture-hero, .chat-avatar { animation:none !important; }
   /* The orb itself stops in AudioOrb.tsx — it paints one static frame rather
      than running the loop, so there is no CSS animation here to cancel. */

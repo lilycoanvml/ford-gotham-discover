@@ -20,7 +20,7 @@ import {
 import type { BoardState } from '@/app/frontend/lib/board';
 
 // ─── TYPES ───────────────────────────────────────────────────────────────────
-type Screen = 'landing' | 'chat' | 'reveal' | 'capture' | 'share';
+type Screen = 'landing' | 'chat' | 'capture' | 'share';
 
 // Validate the model's config_id against the five known shapes; fall back safely.
 const KNOWN_CONFIGS = Object.keys(CONFIG_LABELS) as ConfigId[];
@@ -33,20 +33,6 @@ function safeConfig(id: string | undefined): ConfigId | null {
 // ─── TTS ─────────────────────────────────────────────────────────────────────
 // The audio engine (context, analyser, clip cache, PCM playback) moved to
 // app/frontend/lib/audio.ts so the live session can share the same graph.
-
-/*
- * Sanitize closingMessage — Gemini occasionally returns template text instead of
- * actual content (square-bracket instructions). Strip it to a safe fallback.
- *
- * Both fallbacks have to end the way a good closingMessage ends: on the
- * stay-in-the-loop question that hands the customer to the capture screen. They
- * cannot name the user's ambition (there is no payload to read it from), so they
- * stay general — but they must not revert to "take a look", which points at the
- * card instead of forward. Dashes are avoided on purpose: the voice engine reads
- * one as a full stop.
- */
-const CLOSING_FALLBACK =
-  "Want to stay in the loop as we build the perfect vehicle for where you're headed?";
 
 /*
  * Spoken on the invite screen if the model's vehiclePitch is missing or looks
@@ -62,26 +48,14 @@ function sanitizeVehiclePitch(msg: string | undefined): string {
 }
 
 /*
- * The gap between the closing line and the follow-up.
+ * The gap between the vehicle pitch and the ask that follows it.
  *
- * The closing line ends on a question — "want to stay in the loop?" — so this
- * is the space the customer answers in. 420ms was long enough to stop the two
- * lines running together but nowhere near long enough to say "yeah, definitely"
- * into, and Miles talked over the answer he had just asked for. A yes takes
- * about a second, after about half a second of reaction time.
- *
- * Nothing is listening here: the live session has closed by the reveal, so the
- * answer is not heard, only left room for. That is the point — being talked
- * over is what made it feel broken.
+ * He introduces the truck, then leaves a real gap before asking for their
+ * details, so the two land as separate thoughts rather than one pitch running
+ * straight into a request. Nothing is listening here — the live session has
+ * closed by this screen — so the pause is room to take it in, not to answer.
  */
 const FOLLOW_UP_BEAT_MS = 2600;
-
-function sanitizeClosingMsg(msg: string): string {
-  if (!msg || msg.startsWith('[') || msg.length > 350) {
-    return `Here's who you're becoming, and the vehicle built to take you there. ${CLOSING_FALLBACK}`;
-  }
-  return msg.replace(/\[.*?\]/g, '').trim() || CLOSING_FALLBACK;
-}
 
 
 // ─── ICONS ───────────────────────────────────────────────────────────────────
@@ -492,60 +466,9 @@ function ChatScreen({ onComplete, onBack, board, setBoard }: {
   );
 }
 
-// ─── REVEAL SCREEN ───────────────────────────────────────────────────────────
-// Design source: Figma "Ford Gotham Discovery" → Frame 1 (node 24:264).
-// Black canvas; tracked-caps config title overlapping the sunrise plate; bold
-// identity headline; narrative; steel CONTINUE pill; ghost START OVER.
-function RevealScreen({ reveal, board, onNext, onRestart }: {
-  reveal: GothamRevealPayload; board: BoardState; onNext: () => void; onRestart: () => void;
-}) {
-  const spoken = useRef(false);
-
-  /*
-   * The card's staged fade-in is pure CSS (see .reveal-* animations); this only
-   * starts the spoken closing line, timed to land with it. The guard sits inside
-   * the timer, not around it — StrictMode's mount/cleanup/mount would otherwise
-   * clear the first timer and short-circuit the second, so nothing ever spoke.
-   *
-   * Two segments, not one. The model's closing line ends on "want to stay in the
-   * loop?"; the follow-up is fixed copy that answers "how?" by naming the button
-   * and the phone number. Splitting them means the promise about what we collect
-   * is never left to the model, and the beat between reads as a reply rather
-   * than one long sentence.
-   */
-  useEffect(() => {
-    const t = setTimeout(() => {
-      if (spoken.current) return;
-      spoken.current = true;
-      speak(sanitizeClosingMsg(reveal.closingMessage), () => {
-        setTimeout(() => speak(REVEAL_FOLLOW_UP), FOLLOW_UP_BEAT_MS);
-      });
-    }, 700);
-    return () => { clearTimeout(t); stopSpeech(); };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  return (
-    <div className="era-screen reveal-screen">
-      <div className="reveal-inner">
-        {/* The same board, with its last two slots closed: the tall right-hand
-            tile and the persona pill. Miles speaks the headline and narrative
-            over it, so neither is drawn here. */}
-        <DiscoveryBoard board={board} showPersona />
-        <div className="gd-sr-only">{`${board.persona ?? ''}. ${reveal.future_self.headline}. ${reveal.future_self.narrative}`}</div>
-      </div>
-
-      <div className="reveal-ctas">
-        <button className="gd-pill reveal-continue" onClick={onNext}>Continue</button>
-        <button className="gd-ghost reveal-startover" onClick={onRestart}>Start over</button>
-      </div>
-    </div>
-  );
-}
-
 // ─── CAPTURE / SIGN UP SCREEN (Figma 41:398) — phone number, skippable ────────
-function CaptureScreen({ reveal, onNext, onBack }: {
-  reveal: GothamRevealPayload; onNext: () => void; onBack: () => void;
+function CaptureScreen({ reveal, onNext }: {
+  reveal: GothamRevealPayload; onNext: () => void;
 }) {
   /*
    * Miles introduces the truck over its photograph. Same staging as the reveal:
@@ -558,7 +481,9 @@ function CaptureScreen({ reveal, onNext, onBack }: {
     const t = setTimeout(() => {
       if (pitched.current) return;
       pitched.current = true;
-      speak(sanitizeVehiclePitch(reveal.vehiclePitch));
+      speak(sanitizeVehiclePitch(reveal.vehiclePitch), () => {
+        setTimeout(() => speak(REVEAL_FOLLOW_UP), FOLLOW_UP_BEAT_MS);
+      });
     }, 650);
     return () => { clearTimeout(t); stopSpeech(); };
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -601,10 +526,8 @@ function CaptureScreen({ reveal, onNext, onBack }: {
 
   return (
     <div className="era-screen capture-screen">
-      <div className="gd-topbar">
-        <BackButton onClick={onBack} />
-      </div>
-
+      {/* No back button: the conversation is behind this screen and there is
+          nothing to return to. "Skip for now" is the way past it. */}
       <div className="capture-inner">
         {/* Figma 46:19 — the vehicle, at the content column's width and its own
             aspect, which is the height the frame draws. */}
@@ -797,18 +720,14 @@ export default function DiscoverApp() {
 
   const handleChatComplete = (r: GothamRevealPayload) => {
     /*
-     * Close the board out. The persona pill takes the config the model landed
-     * on — the same one the share card reads — and the honest-match rule is
-     * relaxed just enough to guarantee the reveal shows photographs rather than
-     * a column of words.
+     * Close the board out and go straight to the invite. There is no reveal
+     * screen between them now: the board completed on the last answer, under
+     * Miles' reaction to it, and the next thing he does is introduce the
+     * vehicle over its photograph.
      */
-    const config = safeConfig(r?.future_self?.config_id);
-    setBoard(b => ensureMinimumImages({
-      ...b,
-      persona: config ? CONFIG_LABELS[config] : 'Your Next You',
-    }));
+    setBoard(ensureMinimumImages);
     setReveal(r);
-    go('reveal');
+    go('capture');
   };
 
   return (
@@ -830,11 +749,8 @@ export default function DiscoverApp() {
             setBoard={setBoard}
           />
         )}
-        {screen === 'reveal' && reveal && (
-          <RevealScreen reveal={reveal} board={board} onNext={() => go('capture')} onRestart={restart} />
-        )}
         {screen === 'capture' && reveal && (
-          <CaptureScreen reveal={reveal} onNext={() => go('share')} onBack={() => go('reveal')} />
+          <CaptureScreen reveal={reveal} onNext={() => go('share')} />
         )}
         {screen === 'share' && reveal && (
           <ShareScreen reveal={reveal} onRestart={restart} onBack={() => go('capture')} />

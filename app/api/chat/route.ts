@@ -49,25 +49,22 @@ They have now answered all three questions. Respond with ONLY a JSON object. No 
     "accentColor": "[hex within the Ford palette below]"
   },
   "caption": "[A first-person, shareable social caption in the user's voice, ~40-55 words. It states the thing they've always wanted to do as an inspiring declaration (not a brag), ties it to needing a vehicle as bold as that ambition, and ends with: 'Discover your next you: Ford.com']",
-  "vehiclePitch": "[SPOKEN over a photo of the vehicle on the next screen. Under 45 words. Open by naming it — 'Here's the Ford Fathom.' Then say why it suits THEM, tying one or two real capabilities from the FACTS below to something SPECIFIC they said. Warm and plain, not a spec sheet, no list, no dashes.]",
-  "closingMessage": "[The coach's SPOKEN close, under 40 words, using their name once. First name their future self out loud and tie it to something SPECIFIC they said. Then END on an invitation to stay in the loop, phrased as a question that names the thing they want to do — e.g. 'Want to stay in the loop as we build the perfect vehicle for chasing first light?' Never tell them to look at anything. No product mentions, no specs. No dashes of any kind.]"
+  "vehiclePitch": "[SPOKEN over a photo of the vehicle on the next screen. Under 45 words. Open by naming it — 'Here's the Ford Fathom.' Then say why it suits THEM, tying one or two real capabilities from the FACTS below to something SPECIFIC they said. Warm and plain, not a spec sheet, no list, no dashes.]"
 }
 
-## THE CLOSING MESSAGE IS SPOKEN ALOUD
-It is read by a voice engine, so write it the way it should sound.
+## THE VEHICLE PITCH IS SPOKEN ALOUD
+It is read by a voice engine over a photograph of the truck, so write it the way
+it should sound.
 
-- It MUST end with the stay-in-the-loop question. That question is what carries
-  the customer into the next screen, so nothing may follow it.
-- Fill the ambition in from THEIR answers, in their words where you can — "for
-  chasing the northern lights", "for hauling your gear to the trailhead", "for
-  taking the studio on the road". Never a generic "for your adventures".
-- Do not promise a date, a price, or that anything is for sale. "As we build" is
-  the strongest claim available.
-- Do not name the channel at all here. A fixed line spoken right after this one
-  says "phone number or email", and two different promises is worse than one.
-  Just ask if they want to stay in the loop. Never say newsletter or sign up.
+- Open by naming it. "Here's the Ford Fathom" or close to it.
+- Then one reason it suits THEM, drawn from what they actually said, in their
+  words where you can — "for hauling boards down the coast", "for keeping the
+  tools running at the site". Never a generic "for your adventures".
+- Do not promise a date, a price, or that anything is for sale.
 - No em dashes, en dashes or hyphens for pauses: the voice engine reads a dash as
   a full stop and the line lands in fragments. Use commas and periods.
+- Do not ask them for anything. A fixed line spoken right after this one asks for
+  their email or phone number.
 
 ## THE ONLY VEHICLE FACTS YOU MAY STATE
 These come from the Fathom order guide. Use one or two, whichever actually fit

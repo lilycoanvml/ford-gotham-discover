@@ -1,20 +1,20 @@
 /*
  * The board's state and the rules that fill it.
  *
- * Figma 1:10 (mid-conversation) and 1:146 (reveal) are the same nine-slot board
- * in two states, so this is one structure that the chat screen and the reveal
- * screen both render — the board the customer watches fill IS the board they
- * end on, rather than a second thing assembled at the end.
+ * Figma 1:10 / 1:146. The board fills as the conversation runs and is complete
+ * on the last answer, which is when the flow moves to the invite — there is no
+ * separate reveal screen assembling a second version of it.
  *
  * Two of the nine slots are the solid pastel circles. They never take content;
  * they are the design's punctuation and they are drawn, not stored.
  */
 
-/** The five slots that take a photo or a word from an answer. */
-export type MediaSlot = 'wide1' | 'tallLeft' | 'full1' | 'wide2' | 'tallRight';
+/** The six slots that take a photo or a word from an answer. */
+export type MediaSlot =
+  'wide1' | 'tallLeft' | 'full1' | 'wide2' | 'tallRight' | 'full2';
 
 export const MEDIA_SLOTS: readonly MediaSlot[] = [
-  'wide1', 'tallLeft', 'full1', 'wide2', 'tallRight',
+  'wide1', 'tallLeft', 'full1', 'wide2', 'tallRight', 'full2',
 ];
 
 export type Tile =
@@ -25,19 +25,18 @@ export type Tile =
 
 export interface BoardState {
   name: string | null;
-  persona: string | null;
   tiles: Record<MediaSlot, Tile>;
 }
 
 export const emptyBoard = (): BoardState => ({
   name: null,
-  persona: null,
   tiles: {
     wide1:     { kind: 'empty' },
     tallLeft:  { kind: 'empty' },
     full1:     { kind: 'empty' },
     wide2:     { kind: 'empty' },
     tallRight: { kind: 'empty' },
+    full2:     { kind: 'empty' },
   },
 });
 
@@ -49,14 +48,14 @@ export const emptyBoard = (): BoardState => ({
  * composition then reads the same every run, and a slow match can never land a
  * tile in a slot a later answer already took.
  *
- * It fills 2, 2, then 1 — the last answer gets a single tile because by then
- * only the tall right-hand slot is left, and that is the one the reveal snaps
- * shut on.
+ * Two tiles per answer, evenly: the board is complete on the last answer and
+ * then the flow moves on. The bottom full-width slot used to carry a persona
+ * title; it is a content tile like any other now.
  */
 const FILL_ORDER: Record<number, readonly MediaSlot[]> = {
   2: ['wide1', 'tallLeft'],
   3: ['full1', 'wide2'],
-  4: ['tallRight'],
+  4: ['tallRight', 'full2'],
 };
 
 export const slotsForAnswer = (n: number): readonly MediaSlot[] => FILL_ORDER[n] ?? [];
@@ -76,10 +75,10 @@ export const imageCount = (board: BoardState): number =>
  * The board must land on at least three photos.
  *
  * Honest matching is the priority while the conversation runs — a tile that
- * shows the wrong picture is worse than one showing the right word. But a
- * reveal made almost entirely of words reads as a failure of the idea rather
- * than a design, so before the reveal paints, word tiles are promoted to the
- * closest photo the matcher held in reserve until three are showing.
+ * shows the wrong picture is worse than one showing the right word. But a board
+ * made almost entirely of words reads as a failure of the idea rather than a
+ * design, so once the last answer is in, word tiles are promoted to the closest
+ * photo the matcher held in reserve until three are showing.
  *
  * Promotion runs in board order, so the tiles that fill first are the ones that
  * turn into photos, and the newest word survives as the mix the design wants.

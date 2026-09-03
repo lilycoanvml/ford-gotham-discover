@@ -12,6 +12,7 @@ import {
 } from '@/app/frontend/lib/audio';
 import { REVEAL_FOLLOW_UP } from '@/app/lib/script';
 import { isEmail, isPhone } from '@/app/lib/contact';
+import { firstName } from '@/app/lib/name';
 import DiscoveryBoard from '@/app/frontend/components/DiscoveryBoard';
 import {
   emptyBoard, ensureMinimumImages, fetchFills, slotsForAnswer, takenSlugs, tileFor,
@@ -47,9 +48,20 @@ function safeConfig(id: string | undefined): ConfigId | null {
 const CLOSING_FALLBACK =
   "Want to stay in the loop as we build the perfect vehicle for where you're headed?";
 
-// A conversational beat between the closing line and the follow-up, so the two
-// read as an exchange rather than one run-on thought.
-const FOLLOW_UP_BEAT_MS = 420;
+/*
+ * The gap between the closing line and the follow-up.
+ *
+ * The closing line ends on a question — "want to stay in the loop?" — so this
+ * is the space the customer answers in. 420ms was long enough to stop the two
+ * lines running together but nowhere near long enough to say "yeah, definitely"
+ * into, and Miles talked over the answer he had just asked for. A yes takes
+ * about a second, after about half a second of reaction time.
+ *
+ * Nothing is listening here: the live session has closed by the reveal, so the
+ * answer is not heard, only left room for. That is the point — being talked
+ * over is what made it feel broken.
+ */
+const FOLLOW_UP_BEAT_MS = 2600;
 
 function sanitizeClosingMsg(msg: string): string {
   if (!msg || msg.startsWith('[') || msg.length > 350) {
@@ -58,31 +70,6 @@ function sanitizeClosingMsg(msg: string): string {
   return msg.replace(/\[.*?\]/g, '').trim() || CLOSING_FALLBACK;
 }
 
-
-/*
- * The name chip wants "Anne", but people answer the name question with a whole
- * sentence — "I'm Anne", "hey, it's Anne". This pulls the name back out.
- *
- * Deliberately local and instant rather than another model call: the chip is
- * the first thing that fills, and it should land while they are still saying it.
- * A wrong guess shows one wrong word on a pastel pill, which is recoverable;
- * a two-second wait for the very first tile is not.
- */
-const NAME_LEAD_INS = new Set([
-  'im', 'i', 'am', 'my', 'name', 'is', 'its', 'it', 'hi', 'hey', 'hello',
-  'call', 'me', 'this', 'the', 'well', 'so', 'uh', 'um', 'sure', 'yeah',
-]);
-
-function firstName(raw: string): string {
-  const words = raw
-    .replace(/[^\p{L}\p{N}\s'-]/gu, ' ')
-    .split(/\s+/)
-    .filter(Boolean);
-  const pick = words.find(w => !NAME_LEAD_INS.has(w.toLowerCase().replace(/'/g, ''))) ?? words[0];
-  if (!pick) return '';
-  const name = pick.slice(0, 14);
-  return name[0].toUpperCase() + name.slice(1).toLowerCase();
-}
 
 // ─── ICONS ───────────────────────────────────────────────────────────────────
 function MicIcon({ size = 22, color = 'currentColor' }: { size?: number; color?: string }) {
@@ -379,8 +366,13 @@ function ChatScreen({ onComplete, onBack, board, setBoard }: {
 
       {/* The orb carries the name question; from the first answer on, the board
           takes the same box and fills as the conversation goes. Same stage, so
-          the header and the dock never move. */}
-      {board.name === null ? (
+          the header and the dock never move.
+
+          Keyed off the answer count, not off board.name: an answer that carries
+          no readable name ("hey there!") leaves the chip empty, and keying on
+          the name would have stranded the orb there for the rest of the run
+          while the tiles filled behind it. */}
+      {answers < 1 ? (
         <div className="orb-stage">
           <AudioOrb colorIndex={orbColor} mode={orbMode} getLevel={getOrbLevel} />
 

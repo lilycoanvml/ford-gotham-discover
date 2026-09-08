@@ -460,10 +460,10 @@ function CaptureScreen({ reveal, onNext }: {
     const t = setTimeout(() => {
       if (pitched.current) return;
       pitched.current = true;
-      // One utterance — the pitch and the ask, no seam between them. The
-      // session prefetched this exact string, so it starts from cache.
+      // One utterance — the pitch and the ask, no seam between them. Streamed,
+      // not prefetched: playback starts on the first chunk (~1s) instead of
+      // waiting out the whole 20-second download. See requestReveal.
       speak(revealSpeech(reveal.vehiclePitch));
-      // Short: the screen is already up and the customer is waiting on him.
     }, 250);
     return () => { clearTimeout(t); stopSpeech(); };
   // eslint-disable-next-line react-hooks/exhaustive-deps

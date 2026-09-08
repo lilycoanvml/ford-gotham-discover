@@ -21,7 +21,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { OPENING_LINE, QUESTIONS, ANSWERS_BEFORE_REVEAL, revealSpeech } from '@/app/lib/script';
+import { OPENING_LINE, QUESTIONS, ANSWERS_BEFORE_REVEAL } from '@/app/lib/script';
 import {
   primeAudio, prefetchSpeech, speakCached, stopSpeech, currentToken, isStale,
   LivePlayer, speakFallback, getAudioContext, attachMicAnalyser, detachMicAnalyser,
@@ -230,12 +230,21 @@ export function useLiveSession({ onComplete, onAnswer }: LiveSessionOptions) {
 
   const requestReveal = useCallback(async () => {
     revealWaitRef.current = true;
-    // The reveal screen speaks this a beat after the closing line. Synthesising
-    // it now, while the reveal itself is still generating, means it plays from
-    // cache instead of leaving a hole in the middle of the hand-off.
-    // The invite screen speaks the pitch and the ask as one utterance, and the
-    // pitch is not known until the payload lands — so the prefetch moves to the
-    // moment it does, below.
+    /*
+     * Nothing is prefetched here, and that is deliberate.
+     *
+     * prefetchSpeech buffers a WHOLE clip before it caches it, and speakCached
+     * awaits an in-flight prefetch rather than racing it. That is the right
+     * trade for the fixed questions, which are fetched a full turn ahead and
+     * have long since landed by the time they are needed. It is exactly wrong
+     * here: the invite line is not known until the payload lands, roughly
+     * 400ms before the capture screen asks for it, so the prefetch can never
+     * win — it can only convert streamed playback into a wait for the entire
+     * download. Measured: first byte at 0.9s, last byte at 22s.
+     *
+     * Left unprefetched, speak() streams it and Miles starts talking a second
+     * after the photo appears.
+     */
     try {
       const res = await fetch('/api/chat', {
         method: 'POST',
@@ -246,13 +255,6 @@ export function useLiveSession({ onComplete, onAnswer }: LiveSessionOptions) {
       const data = await res.json();
       if (data.type !== 'gotham_reveal') throw new Error('unexpected reveal shape');
       revealRef.current = data.data;
-      /*
-       * Synthesise the invite line NOW, while the hand-off animation and the
-       * screen swap are still running. By the time the capture screen asks for
-       * it, it is in the cache and starts instantly instead of leaving the
-       * customer looking at a photo of a truck in silence.
-       */
-      prefetchSpeech(revealSpeech(data.data?.vehiclePitch));
       finishIfReady();
     } catch (err) {
       console.error('[live] reveal failed', err);

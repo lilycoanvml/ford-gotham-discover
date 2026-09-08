@@ -40,6 +40,7 @@ COPY --from=builder --chown=nextjs:nodejs /app/public           ./public
 # The live relay is plain CJS outside the Next build, so it is copied verbatim
 # rather than traced. shared/ carries the question wording both sides read.
 COPY --chown=nextjs:nodejs gateway.js ./gateway.js
+COPY --chown=nextjs:nodejs gate.js    ./gate.js
 COPY --chown=nextjs:nodejs live       ./live
 COPY --chown=nextjs:nodejs shared     ./shared
 

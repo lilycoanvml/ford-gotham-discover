@@ -32,7 +32,10 @@ steps:
       - --timeout=900
       # Keeps a browser's HTTP and WS traffic on one instance.
       - --session-affinity
-      - --set-secrets=GEMINI_API_KEY=gemini-api-key:latest
+      # APP_PASSCODE gates the whole app in gateway.js. Kept in Secret Manager
+      # rather than --set-env-vars so the passcode is not committed to this repo;
+      # rotate with a new secret version + redeploy, no image rebuild.
+      - --set-secrets=GEMINI_API_KEY=gemini-api-key:latest,APP_PASSCODE=app-passcode:latest
       - --set-env-vars=GEMINI_MODEL=gemini-3.6-flash,GEMINI_REACTION_MODEL=gemini-3.5-flash-lite,GEMINI_LIVE_MODEL=gemini-3.1-flash-live-preview,GEMINI_TTS_MODEL=gemini-3.1-flash-live-preview,GEMINI_TTS_VOICE=Charon
 
 substitutions:

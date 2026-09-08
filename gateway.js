@@ -22,6 +22,7 @@ const fs = require('fs');
 const path = require('path');
 const { spawn } = require('child_process');
 const { attachLiveRelay } = require('./live/relay');
+const gate = require('./gate');
 
 const PORT = Number(process.env.PORT) || 3000;
 const INTERNAL_PORT = Number(process.env.INTERNAL_PORT) || PORT + 1;
@@ -99,6 +100,7 @@ function listenOnce(why) {
   listenOnce.done = true;
   server.listen(PORT, '0.0.0.0', () => {
     console.log(`[gateway] listening on :${PORT} → next on :${INTERNAL_PORT} (${DEV ? 'dev' : 'production'}, ${why})`);
+    console.log(`[gateway] passcode gate ${gate.enabled ? 'ON' : 'OFF (APP_PASSCODE unset — the app is public)'}`);
   });
 }
 
@@ -131,6 +133,19 @@ for (const sig of ['SIGTERM', 'SIGINT']) {
 
 // ─── HTTP proxy ──────────────────────────────────────────────────────────────
 const server = http.createServer((req, res) => {
+  // The passcode gate answers for itself and swallows anything unauthorised, so
+  // nothing unauthenticated ever reaches Next — pages, API routes and static
+  // assets alike. Disabled (returns false immediately) when APP_PASSCODE is unset.
+  gate.handleHttp(req, res).then((handled) => {
+    if (!handled) proxy(req, res);
+  }).catch((err) => {
+    console.error('[gateway] gate error:', err.message);
+    if (!res.headersSent) res.writeHead(500, { 'Content-Type': 'text/plain' });
+    res.end('Gate error');
+  });
+});
+
+function proxy(req, res) {
   const proxyReq = http.request(
     { host: HOST, port: INTERNAL_PORT, method: req.method, path: req.url, headers: req.headers },
     (proxyRes) => {
@@ -147,7 +162,7 @@ const server = http.createServer((req, res) => {
     console.warn(`[gateway] proxy error for ${req.method} ${req.url}: ${err.message} (nextReady=${nextReady})`);
   });
   req.pipe(proxyReq);
-});
+}
 
 /*
  * /api/live is ours. Every other upgrade — notably Next's dev HMR socket — has
@@ -158,6 +173,10 @@ const server = http.createServer((req, res) => {
  * without touching /api/live, and the relay's own listener claims it.
  */
 server.on('upgrade', (req, socket, head) => {
+  // Runs before the relay's own listener, so this one check covers /api/live
+  // too — a WebSocket is the one route Next middleware could never have seen.
+  if (!gate.allowUpgrade(req, socket)) return;
+
   let pathname;
   try { pathname = new URL(req.url, 'http://localhost').pathname; }
   catch { socket.destroy(); return; }

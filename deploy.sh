@@ -12,6 +12,12 @@
 #   gcloud services enable run.googleapis.com artifactregistry.googleapis.com
 #   gcloud secrets create gemini-api-key --replication-policy=automatic
 #   echo -n "YOUR_KEY" | gcloud secrets versions add gemini-api-key --data-file=-
+#
+#   # The shared passcode that gates the prototype (gateway.js + gate.js).
+#   # Unset it and the app is public, so it lives in Secret Manager, not in git —
+#   # which means the passcode itself does not belong in this comment either.
+#   gcloud secrets create app-passcode --replication-policy=automatic
+#   printf 'THE_PASSCODE' | gcloud secrets versions add app-passcode --data-file=-
 
 set -euo pipefail
 
@@ -59,13 +65,17 @@ gcloud run deploy "$SERVICE_NAME" \
   --max-instances=10 \
   --timeout=900 \
   --session-affinity \
-  --set-secrets="GEMINI_API_KEY=gemini-api-key:latest" \
+  --set-secrets="GEMINI_API_KEY=gemini-api-key:latest,APP_PASSCODE=app-passcode:latest" \
   --set-env-vars="GEMINI_MODEL=gemini-3.6-flash,GEMINI_REACTION_MODEL=gemini-3.5-flash-lite,GEMINI_LIVE_MODEL=gemini-3.1-flash-live-preview,GEMINI_TTS_MODEL=gemini-3.1-flash-live-preview,GEMINI_TTS_VOICE=Charon" \
   --project="$PROJECT_ID"
 
 # --timeout=900       a WebSocket counts as one long request; the default 300s
 #                     would sever a session that idles mid-conversation.
 # --session-affinity  keeps a browser's HTTP and WS traffic on one instance.
+#
+# --set-secrets      APP_PASSCODE turns the passcode gate on. Rotate the passcode
+#                    with `gcloud secrets versions add app-passcode` followed by a
+#                    redeploy — the image does not change.
 #
 # --min-instances=0 is left as-is to keep idle cost at zero, but a cold start
 # has to boot the gateway AND Next before the relay's 10s setup timeout. If the

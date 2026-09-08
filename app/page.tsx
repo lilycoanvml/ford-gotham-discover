@@ -10,7 +10,7 @@ import {
   audioLevel, micLevel, syntheticEnvelope, primeAudio, primeVoices, prewarmTTS,
   speak, stopSpeech,
 } from '@/app/frontend/lib/audio';
-import { REVEAL_FOLLOW_UP } from '@/app/lib/script';
+import { revealSpeech, ANSWERS_BEFORE_REVEAL } from '@/app/lib/script';
 import { isEmail, isPhone } from '@/app/lib/contact';
 import { firstName } from '@/app/lib/name';
 import DiscoveryBoard from '@/app/frontend/components/DiscoveryBoard';
@@ -33,29 +33,6 @@ function safeConfig(id: string | undefined): ConfigId | null {
 // ─── TTS ─────────────────────────────────────────────────────────────────────
 // The audio engine (context, analyser, clip cache, PCM playback) moved to
 // app/frontend/lib/audio.ts so the live session can share the same graph.
-
-/*
- * Spoken on the invite screen if the model's vehiclePitch is missing or looks
- * like template text. It names the vehicle and stops — it cannot say why the
- * truck suits THEM, because there is no payload to read their answers from.
- */
-const PITCH_FALLBACK =
-  "Here's the Ford Fathom. All electric, with a steel bed, a front trunk, and enough power onboard to run your gear wherever you take it.";
-
-function sanitizeVehiclePitch(msg: string | undefined): string {
-  if (!msg || msg.startsWith('[') || msg.length > 400) return PITCH_FALLBACK;
-  return msg.replace(/\[.*?\]/g, '').trim() || PITCH_FALLBACK;
-}
-
-/*
- * The gap between the vehicle pitch and the ask that follows it.
- *
- * He introduces the truck, then leaves a real gap before asking for their
- * details, so the two land as separate thoughts rather than one pitch running
- * straight into a request. Nothing is listening here — the live session has
- * closed by this screen — so the pause is room to take it in, not to answer.
- */
-const FOLLOW_UP_BEAT_MS = 2600;
 
 
 // ─── ICONS ───────────────────────────────────────────────────────────────────
@@ -304,15 +281,17 @@ function ChatScreen({ onComplete, onBack, board, setBoard }: {
     setTextInput('');
   };
 
-  // 4 dots = name + 3 questions
-  const progressCount = Math.min(4, answers);
+  // One dot per answer the script expects: the name, then every question.
+  const progressCount = Math.min(ANSWERS_BEFORE_REVEAL, answers);
   const isSpeaking  = phase === 'speaking';
   const isListening = phase === 'listening';
   const isBusy      = phase === 'thinking' || phase === 'revealing' || phase === 'connecting';
 
   // The orb takes the next palette colour per question (terra → sage → steel),
   // matching the order of the Fathom / Your / Future chips on the landing screen.
-  // The name prompt shares Q1's colour, so each of the three questions gets one.
+  // The name prompt shares Q1's colour, and there are only three palettes — so
+  // the two practical questions at the end hold on steel rather than cycling
+  // back to terra, which would read as the conversation starting over.
   const orbColor = Math.min(2, Math.max(0, progressCount - 1));
   const orbMode: OrbMode =
       isBusy      ? 'thinking'
@@ -350,7 +329,7 @@ function ChatScreen({ onComplete, onBack, board, setBoard }: {
           <div className="chat-ali-sub">{statusLine}</div>
         </div>
         <div className="chat-progress">
-          {Array.from({ length: 4 }).map((_, i) => (
+          {Array.from({ length: ANSWERS_BEFORE_REVEAL }).map((_, i) => (
             <div key={i} className={`chat-progress-dot ${i < progressCount ? 'done' : i === progressCount ? 'active' : 'inactive'}`} />
           ))}
         </div>
@@ -481,10 +460,11 @@ function CaptureScreen({ reveal, onNext }: {
     const t = setTimeout(() => {
       if (pitched.current) return;
       pitched.current = true;
-      speak(sanitizeVehiclePitch(reveal.vehiclePitch), () => {
-        setTimeout(() => speak(REVEAL_FOLLOW_UP), FOLLOW_UP_BEAT_MS);
-      });
-    }, 650);
+      // One utterance — the pitch and the ask, no seam between them. The
+      // session prefetched this exact string, so it starts from cache.
+      speak(revealSpeech(reveal.vehiclePitch));
+      // Short: the screen is already up and the customer is waiting on him.
+    }, 250);
     return () => { clearTimeout(t); stopSpeech(); };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -576,7 +556,7 @@ function CaptureScreen({ reveal, onNext }: {
             onClick={submit}
             disabled={status === 'sending' || (!hasEmail && !hasPhone)}
           >
-            {status === 'sending' ? 'One moment…' : 'Share with Friends'}
+            {status === 'sending' ? 'One moment…' : 'Continue'}
           </button>
           <button className="gd-ghost" onClick={onNext}>Skip for now</button>
         </div>

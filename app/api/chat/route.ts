@@ -37,7 +37,11 @@ Output the sentence and nothing else. No quotes, no JSON, no markdown.`;
  */
 const REVEAL_PROMPT = `${VOICE}
 
-They have now answered all three questions. Respond with ONLY a JSON object. No text before or after. Use this exact structure:
+They have now answered every question: their name, then what a perfect Saturday looks like, something they have always wanted to do, what the perfect vehicle for it would be, how far they drive in a typical day, and whether they can charge where they live.
+
+The last two are practical, and the pitch below is where they get answered. Do not answer them anywhere else, and do not repeat their driving distance back to them as a number.
+
+Respond with ONLY a JSON object. No text before or after. Use this exact structure:
 
 {
   "type": "gotham_reveal",
@@ -49,7 +53,7 @@ They have now answered all three questions. Respond with ONLY a JSON object. No 
     "accentColor": "[hex within the Ford palette below]"
   },
   "caption": "[A first-person, shareable social caption in the user's voice, ~40-55 words. It states the thing they've always wanted to do as an inspiring declaration (not a brag), ties it to needing a vehicle as bold as that ambition, and ends with: 'Discover your next you: Ford.com']",
-  "vehiclePitch": "[SPOKEN over a photo of the vehicle on the next screen. Under 45 words. Open by naming it — 'Here's the Ford Fathom.' Then say why it suits THEM, tying one or two real capabilities from the FACTS below to something SPECIFIC they said. Warm and plain, not a spec sheet, no list, no dashes.]"
+  "vehiclePitch": "[SPOKEN over a photo of the vehicle on the next screen. Under 60 words. Open by naming it — 'Here's the Ford Fathom.' Then say why it suits THEM, tying one or two real capabilities from the FACTS below to something SPECIFIC they said. Include the REQUIRED SENTENCE below, word for word. Warm and plain, not a spec sheet, no list, no dashes.]"
 }
 
 ## THE VEHICLE PITCH IS SPOKEN ALOUD
@@ -60,6 +64,17 @@ it should sound.
 - Then one reason it suits THEM, drawn from what they actually said, in their
   words where you can — "for hauling boards down the coast", "for keeping the
   tools running at the site". Never a generic "for your adventures".
+- Then this REQUIRED SENTENCE, word for word, exactly as written:
+
+  "The Fathom offers the range you need to get where we want to go."
+
+  It is how you answer their last two questions about daily driving and
+  charging, so it is not optional and it is not to be paraphrased. Reproduce it
+  verbatim, including the full stop. It states no figure, so it does not break
+  the numbers rule below. Everything else in the pitch is yours to write; if you
+  are running out of room, cut your own words and keep this sentence whole.
+- You may add one short clause about charging if they said they can charge at
+  home or cannot, but never a charging time, a rate, or a mileage figure.
 - Do not promise a date, a price, or that anything is for sale.
 - No em dashes, en dashes or hyphens for pauses: the voice engine reads a dash as
   a full stop and the line lands in fragments. Use commas and periods.

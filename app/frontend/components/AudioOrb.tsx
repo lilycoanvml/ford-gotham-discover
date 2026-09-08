@@ -11,7 +11,8 @@ import { useEffect, useRef } from 'react';
  * coach's live audio level.
  *
  * Differences from the reference, all deliberate:
- *   • Three palette gradients (terra / sage / steel), one per question, cross-
+ *   • Three palette gradients (terra / sage / steel), advanced per question and
+ *     held on the last one once they run out, cross-
  *     faded through the reference's own stop-interpolation path.
  *   • No bottom-align mode — this orb only ever sits centred in its stage.
  *   • A calmer size boost, because the orb lives inside a stage rather than
@@ -26,7 +27,7 @@ interface GradientStop { position: number; r: number; g: number; b: number; a: n
  * Each set runs light tint (core) → the palette colour (body) → a darkened
  * edge, with alpha falling off outward, matching the reference's stop shape.
  * Order is terra → sage → steel: the Fathom / Your / Future chips, and the order
- * the three questions are asked in.
+ * the first three questions are asked in.
  */
 const PALETTE_STOPS: GradientStop[][] = [
   [ // terra #DC997E

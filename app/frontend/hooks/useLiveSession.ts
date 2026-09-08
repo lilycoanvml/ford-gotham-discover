@@ -21,7 +21,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { OPENING_LINE, QUESTIONS, ANSWERS_BEFORE_REVEAL, REVEAL_FOLLOW_UP } from '@/app/lib/script';
+import { OPENING_LINE, QUESTIONS, ANSWERS_BEFORE_REVEAL, revealSpeech } from '@/app/lib/script';
 import {
   primeAudio, prefetchSpeech, speakCached, stopSpeech, currentToken, isStale,
   LivePlayer, speakFallback, getAudioContext, attachMicAnalyser, detachMicAnalyser,
@@ -59,6 +59,12 @@ const BEAT_MS = 260;
  * audio context costs a pause rather than the rest of the conversation.
  */
 const DRAIN_TIMEOUT_MS = 15000;
+
+/*
+ * How long to keep dropping audio after cutting Miles off, before assuming
+ * Gemini is never going to confirm the interruption.
+ */
+const AUDIO_GATE_MS = 700;
 
 export interface LiveSessionOptions {
   onComplete: (
@@ -99,6 +105,19 @@ export function useLiveSession({ onComplete, onAnswer }: LiveSessionOptions) {
   const answersRef  = useRef(0);
   // Deadline for the hand-off, armed only while waiting on queued speech.
   const finishTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  /*
+   * Set while the audio of a sentence we just cut off is still arriving.
+   *
+   * flush() drops what is already queued, but Gemini generates ahead of
+   * realtime and the frames it had already sent keep coming. Pushing those
+   * re-schedules the sentence we just abandoned, so the interruption was half
+   * undone and what came out was a stutter in the middle of his line. Frames
+   * are dropped until Gemini confirms the interruption, the turn ends, or the
+   * deadline below passes.
+   */
+  const audioGateRef = useRef(false);
+  const audioGateTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Held in a ref rather than a dependency: re-creating closeUserTurn on every
   // parent render would tear down the socket handlers mid-conversation.
   const onAnswerRef = useRef(onAnswer);
@@ -137,6 +156,25 @@ export function useLiveSession({ onComplete, onAnswer }: LiveSessionOptions) {
     workletRef.current?.port.postMessage({ strict });
   }, []);
 
+  const openAudioGate = useCallback(() => {
+    audioGateRef.current = false;
+    if (audioGateTimerRef.current) {
+      clearTimeout(audioGateTimerRef.current);
+      audioGateTimerRef.current = null;
+    }
+  }, []);
+
+  const closeAudioGate = useCallback(() => {
+    audioGateRef.current = true;
+    if (audioGateTimerRef.current) clearTimeout(audioGateTimerRef.current);
+    // Safety release: if Gemini never confirms, a brief gap beats a permanent
+    // mute. The stricter onset upstream makes reaching this rare.
+    audioGateTimerRef.current = setTimeout(() => {
+      audioGateTimerRef.current = null;
+      audioGateRef.current = false;
+    }, AUDIO_GATE_MS);
+  }, []);
+
   const sendJson = useCallback((obj: unknown) => {
     const ws = wsRef.current;
     if (ws?.readyState === WebSocket.OPEN) ws.send(JSON.stringify(obj));
@@ -156,9 +194,12 @@ export function useLiveSession({ onComplete, onAnswer }: LiveSessionOptions) {
     const payload = revealRef.current;
     if (!payload) return;
     if (finishTimerRef.current) { clearTimeout(finishTimerRef.current); finishTimerRef.current = null; }
+    if (audioGateTimerRef.current) { clearTimeout(audioGateTimerRef.current); audioGateTimerRef.current = null; }
+    audioGateRef.current = false;
     doneRef.current = true;
     const transcript = buildTranscript();
-    setTimeout(() => onComplete(payload, transcript), 400);
+    // Just enough for the last of his audio to clear before the screen changes.
+    setTimeout(() => onComplete(payload, transcript), 150);
   }, [buildTranscript, onComplete]);
 
   /*
@@ -192,7 +233,9 @@ export function useLiveSession({ onComplete, onAnswer }: LiveSessionOptions) {
     // The reveal screen speaks this a beat after the closing line. Synthesising
     // it now, while the reveal itself is still generating, means it plays from
     // cache instead of leaving a hole in the middle of the hand-off.
-    prefetchSpeech(REVEAL_FOLLOW_UP);
+    // The invite screen speaks the pitch and the ask as one utterance, and the
+    // pitch is not known until the payload lands — so the prefetch moves to the
+    // moment it does, below.
     try {
       const res = await fetch('/api/chat', {
         method: 'POST',
@@ -203,6 +246,13 @@ export function useLiveSession({ onComplete, onAnswer }: LiveSessionOptions) {
       const data = await res.json();
       if (data.type !== 'gotham_reveal') throw new Error('unexpected reveal shape');
       revealRef.current = data.data;
+      /*
+       * Synthesise the invite line NOW, while the hand-off animation and the
+       * screen swap are still running. By the time the capture screen asks for
+       * it, it is in the cache and starts instantly instead of leaving the
+       * customer looking at a photo of a truck in silence.
+       */
+      prefetchSpeech(revealSpeech(data.data?.vehiclePitch));
       finishIfReady();
     } catch (err) {
       console.error('[live] reveal failed', err);
@@ -324,6 +374,8 @@ export function useLiveSession({ onComplete, onAnswer }: LiveSessionOptions) {
 
     ws.onmessage = (ev) => {
       if (ev.data instanceof ArrayBuffer) {
+        // Tail of a sentence we already cut off — playing it would undo the cut.
+        if (audioGateRef.current) return;
         if (turnOpenRef.current) { closeUserTurn(); setPhase('speaking'); }
         setMicStrict(true);
         player.push(ev.data);
@@ -347,11 +399,15 @@ export function useLiveSession({ onComplete, onAnswer }: LiveSessionOptions) {
           saidRef.current += msg.text ?? '';
           break;
         case 'interrupted':
+          // Gemini has confirmed and stopped: nothing more from the old turn is
+          // coming, so anything that arrives next belongs to the new one.
           player.flush();
+          openAudioGate();
           saidRef.current = '';
           setPhase('listening');
           break;
         case 'turnEnd':
+          openAudioGate();
           void onTurnEnd();
           break;
         case 'error':
@@ -367,7 +423,7 @@ export function useLiveSession({ onComplete, onAnswer }: LiveSessionOptions) {
     ws.onclose  = () => { if (!doneRef.current && !revealWaitRef.current) setDegraded(true); };
 
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [closeUserTurn, finishIfReady, onTurnEnd]);
+  }, [closeUserTurn, finishIfReady, onTurnEnd, openAudioGate]);
 
   // ─── the opening line ──────────────────────────────────────────────────────
   const greet = useCallback(async () => {
@@ -427,6 +483,7 @@ export function useLiveSession({ onComplete, onAnswer }: LiveSessionOptions) {
         // own output and the queued audio here has to go with it.
         if (playerRef.current?.speaking) {
           playerRef.current.flush();
+          closeAudioGate();
           saidRef.current = '';
         }
         setPhase('listening');
@@ -443,7 +500,7 @@ export function useLiveSession({ onComplete, onAnswer }: LiveSessionOptions) {
     // be a feedback loop. The worklet is a sink, which is enough to pull audio.
     attachMicAnalyser(src);   // lets the orb move to the user's real voice
     workletRef.current = node;
-  }, []);
+  }, [closeAudioGate]);
 
   // ─── lifecycle ─────────────────────────────────────────────────────────────
   const start = useCallback(async () => {
@@ -558,6 +615,8 @@ export function useLiveSession({ onComplete, onAnswer }: LiveSessionOptions) {
   const stop = useCallback(() => {
     stopSpeech();
     if (finishTimerRef.current) { clearTimeout(finishTimerRef.current); finishTimerRef.current = null; }
+    if (audioGateTimerRef.current) { clearTimeout(audioGateTimerRef.current); audioGateTimerRef.current = null; }
+    audioGateRef.current = false;
     playerRef.current?.flush();
     detachMicAnalyser();
     try { wsRef.current?.close(); } catch { /* already closed */ }

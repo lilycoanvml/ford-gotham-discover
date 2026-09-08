@@ -376,8 +376,13 @@ export function useLiveSession({ onComplete, onAnswer }: LiveSessionOptions) {
 
     ws.onmessage = (ev) => {
       if (ev.data instanceof ArrayBuffer) {
-        // Tail of a sentence we already cut off — playing it would undo the cut.
-        if (audioGateRef.current) return;
+        /*
+         * Tail of a sentence we already cut off — playing it would undo the
+         * cut. Skipped rather than dropped: the bytes still have to be counted
+         * or the frames after the gate reopens parse half a sample out of
+         * phase, which is audible as a buzz mid-sentence.
+         */
+        if (audioGateRef.current) { player.skip(ev.data); return; }
         if (turnOpenRef.current) { closeUserTurn(); setPhase('speaking'); }
         setMicStrict(true);
         player.push(ev.data);
@@ -484,7 +489,9 @@ export function useLiveSession({ onComplete, onAnswer }: LiveSessionOptions) {
         // Opening a turn under Miles is how barge-in happens: Gemini drops its
         // own output and the queued audio here has to go with it.
         if (playerRef.current?.speaking) {
-          playerRef.current.flush();
+          // keepAlignment: the socket carries on delivering this same turn and
+          // the gate below skips it, so the half sample must survive the flush.
+          playerRef.current.flush(true);
           closeAudioGate();
           saidRef.current = '';
         }

@@ -361,39 +361,22 @@ export class LivePlayer {
     return Math.max(0, this.playhead - ctx.currentTime);
   }
 
-  /** Re-join whatever the last frame left dangling. */
-  private join(incoming: Uint8Array): Uint8Array {
-    if (!this.carry.length) return incoming;
-    const bytes = new Uint8Array(this.carry.length + incoming.length);
-    bytes.set(this.carry, 0);
-    bytes.set(incoming, this.carry.length);
-    return bytes;
-  }
-
-  /*
-   * Account for a frame we deliberately are not playing.
-   *
-   * The audio gate drops the tail of a sentence it just cut off, but dropping
-   * the BYTES is not the same as dropping the frame: a part is not guaranteed
-   * to end on a sample boundary, so discarding one of odd length shifts every
-   * frame after it by one byte. That is the same misalignment `carry` exists to
-   * prevent, and it arrives as a high-pitched buzz the moment the gate reopens
-   * mid-sentence. Only the parity matters, so fold the frame through the same
-   * accounting and throw the samples away.
-   */
-  skip(pcm: ArrayBuffer) {
-    const bytes = this.join(new Uint8Array(pcm));
-    const usable = bytes.length - (bytes.length % 2);
-    this.carry = usable === bytes.length ? new Uint8Array(0) : bytes.slice(usable);
-  }
-
   push(pcm: ArrayBuffer) {
     primeAudio();
     const ctx = getAudioContext();
     if (!ctx) return;
     if (ctx.state === 'suspended') void ctx.resume();
 
-    const bytes = this.join(new Uint8Array(pcm));
+    // Re-join whatever the last frame left dangling before decoding.
+    const incoming = new Uint8Array(pcm);
+    let bytes: Uint8Array;
+    if (this.carry.length) {
+      bytes = new Uint8Array(this.carry.length + incoming.length);
+      bytes.set(this.carry, 0);
+      bytes.set(incoming, this.carry.length);
+    } else {
+      bytes = incoming;
+    }
 
     const usable = bytes.length - (bytes.length % 2);
     this.carry = usable === bytes.length
@@ -424,21 +407,13 @@ export class LivePlayer {
     };
   }
 
-  /*
-   * Barge-in: drop everything queued but not yet heard.
-   *
-   * `keepAlignment` is for the one caller whose socket keeps delivering the
-   * SAME turn afterwards — the frames the audio gate is about to skip. The
-   * dangling byte there is the first half of a sample whose second half is
-   * still in flight, so dropping it shifts every following frame by one and the
-   * tail comes back as a buzz. Callers that know the next audio begins a fresh
-   * turn leave it false, and the half sample goes with the utterance it
-   * belonged to.
-   */
-  flush(keepAlignment = false) {
+  /** Barge-in: drop everything queued but not yet heard. */
+  flush() {
     for (const src of this.sources) { try { src.onended = null; src.stop(); } catch { /* ended */ } }
     this.sources = [];
-    if (!keepAlignment) this.carry = new Uint8Array(0);
+    // The half sample belonged to the utterance being dropped. Carrying it into
+    // the next one would put that one out of phase from its first frame.
+    this.carry = new Uint8Array(0);
     const ctx = getAudioContext();
     this.playhead = ctx ? ctx.currentTime : 0;
   }

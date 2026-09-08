@@ -21,6 +21,20 @@
  */
 const TARGET_RATE = 16000;
 
+/*
+ * Anti-aliasing cutoff, below the 8kHz Nyquist of the target rate.
+ *
+ * Decimating 48k to 16k throws away two of every three samples, and anything
+ * above 8kHz in the input folds back down into the band as inharmonic,
+ * metallic content. Linear interpolation alone is a two-tap filter — it barely
+ * touches those frequencies. So this ran unfiltered, and the fold-back did two
+ * kinds of damage: the model heard a harsh ringing version of the voice, and
+ * the folded energy inflated the RMS the VAD measures, which made Miles' own
+ * leakage through echo cancellation look like speech and trip a barge-in in the
+ * middle of his sentence.
+ */
+const LP_CUTOFF = 6800;
+
 // ~20ms per message. Small enough that end-of-speech detection stays snappy,
 // large enough that we are not posting thousands of tiny messages a second.
 const FRAME_SAMPLES = 320;
@@ -28,6 +42,17 @@ const FRAME_SAMPLES = 320;
 // Speech has to hold for this long before we call it a turn — stops a cough or
 // a door closing from opening a turn Gemini then has to answer.
 const ONSET_FRAMES = 3;      // 60ms
+
+/*
+ * And this long while Miles is talking.
+ *
+ * Interrupting him sends activityStart upstream, which makes Gemini abandon the
+ * sentence it is speaking — so a false trigger here is not cosmetic, it cuts him
+ * off. 60ms of leakage cleared the old bar; a person who actually means to
+ * interrupt keeps talking for far longer than 300ms, and a burst of echo does
+ * not.
+ */
+const ONSET_FRAMES_STRICT = 15;  // 300ms
 
 // How long the user can pause mid-thought before we call the turn finished.
 // Natural turn-taking gaps run ~200ms; people mid-sentence pause longer than
@@ -48,6 +73,28 @@ class PcmRecorder extends AudioWorkletProcessor {
     this._n = 0;
     this._muted = false;
     this._tail = 0;                         // last sample of the previous block
+
+    /*
+     * Two cascaded biquads (RBJ cookbook low-pass, Q=0.7071) give a 4th-order
+     * roll-off for eight multiplies a sample — cheap enough for the audio
+     * thread, steep enough that what folds back is far below the speech it
+     * would otherwise smear. Coefficients are computed once here; `sampleRate`
+     * is the worklet global for the context's real rate.
+     */
+    const w0 = (2 * Math.PI * Math.min(LP_CUTOFF, sampleRate / 2 - 500)) / sampleRate;
+    const cosW = Math.cos(w0);
+    const alpha = Math.sin(w0) / (2 * 0.70710678);
+    const a0 = 1 + alpha;
+    this._b0 = ((1 - cosW) / 2) / a0;
+    this._b1 = (1 - cosW) / a0;
+    this._b2 = this._b0;
+    this._a1 = (-2 * cosW) / a0;
+    this._a2 = (1 - alpha) / a0;
+    // Direct Form I state, one set per cascaded stage.
+    this._s1 = { x1: 0, x2: 0, y1: 0, y2: 0 };
+    this._s2 = { x1: 0, x2: 0, y1: 0, y2: 0 };
+    // Filtered copy of the current block. Allocated once; blocks are 128 frames.
+    this._f = new Float32Array(256);
 
     // VAD state
     this._speaking = false;
@@ -78,9 +125,19 @@ class PcmRecorder extends AudioWorkletProcessor {
     this._quiet = 0;
   }
 
+  // One biquad stage, Direct Form I. No allocation, cannot throw.
+  _stage(st, x) {
+    const y = this._b0 * x + this._b1 * st.x1 + this._b2 * st.x2
+            - this._a1 * st.y1 - this._a2 * st.y2;
+    st.x2 = st.x1; st.x1 = x;
+    st.y2 = st.y1; st.y1 = y;
+    return y;
+  }
+
   // One decision per emitted frame, on the resampled signal.
   _vad(rms) {
     const k = this._strict ? 2.2 : 1.0;
+    const onsetNeeded = this._strict ? ONSET_FRAMES_STRICT : ONSET_FRAMES;
     const startAt = Math.max(MIN_START * k, this._noiseFloor * 3.5 * k);
     const endAt   = Math.max(MIN_END, this._noiseFloor * 2.0);
 
@@ -89,7 +146,7 @@ class PcmRecorder extends AudioWorkletProcessor {
       // creep up to swallow the speech it is supposed to detect.
       this._noiseFloor = this._noiseFloor * 0.995 + rms * 0.005;
       if (rms > startAt) {
-        if (++this._onset >= ONSET_FRAMES) {
+        if (++this._onset >= onsetNeeded) {
           this._speaking = true;
           this._quiet = 0;
           this.port.postMessage({ vad: 'start' });
@@ -113,15 +170,35 @@ class PcmRecorder extends AudioWorkletProcessor {
 
     // No mic yet, or gated while a cached question plays through the speakers.
     if (!ch || ch.length === 0) return true;
-    if (this._muted) { this._pos = 0; this._tail = ch[ch.length - 1]; return true; }
+    if (this._muted) {
+      this._pos = 0;
+      this._tail = 0;
+      // Drop the filter's memory too, so the first block back does not ring
+      // with whatever was in flight when the mic was cut.
+      this._s1.x1 = this._s1.x2 = this._s1.y1 = this._s1.y2 = 0;
+      this._s2.x1 = this._s2.x2 = this._s2.y1 = this._s2.y2 = 0;
+      return true;
+    }
+
+    /*
+     * Band-limit BEFORE decimating. This is the step that was missing: the read
+     * head below skips two of every three samples, so anything left above 8kHz
+     * folds back into the band instead of being discarded.
+     */
+    const len = ch.length;
+    if (this._f.length < len) this._f = new Float32Array(len);
+    const f = this._f;
+    for (let j = 0; j < len; j++) {
+      f[j] = this._stage(this._s2, this._stage(this._s1, ch[j]));
+    }
 
     // Linear interpolation across the block boundary: `_pos` carries the
     // fractional offset between blocks so the resampled stream has no seam.
-    while (this._pos < ch.length) {
+    while (this._pos < len) {
       const i = Math.floor(this._pos);
       const frac = this._pos - i;
-      const a = i === 0 ? this._tail : ch[i - 1];
-      const b = ch[i];
+      const a = i === 0 ? this._tail : f[i - 1];
+      const b = f[i];
       const s = a + (b - a) * frac;
 
       this._sumSq += s * s;
@@ -144,8 +221,8 @@ class PcmRecorder extends AudioWorkletProcessor {
       this._pos += this._ratio;
     }
 
-    this._pos -= ch.length;
-    this._tail = ch[ch.length - 1];
+    this._pos -= len;
+    this._tail = f[len - 1];
     return true;
   }
 }

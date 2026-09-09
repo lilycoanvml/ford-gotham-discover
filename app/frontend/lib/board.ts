@@ -44,15 +44,13 @@ export const emptyBoard = (): BoardState => ({
  * Which slots each answer fills.
  *
  * `answers` counts the name first, so n=1 is the name and n=2..4 are the three
- * questions about their life. The order is fixed in code rather than chosen by
- * the model: the composition then reads the same every run, and a slow match
- * can never land a tile in a slot a later answer already took.
+ * questions. The order is fixed in code rather than chosen by the model: the
+ * composition then reads the same every run, and a slow match can never land a
+ * tile in a slot a later answer already took.
  *
- * Two tiles per answer, evenly, and the board is full by n=4. The questions
- * after that — daily driving distance and home charging — are practical
- * qualifiers, not material for a mood board, so they map to no slots and the
- * completed board simply stays on screen while they are asked. A missing entry
- * here is the mechanism, not an oversight.
+ * Two tiles per answer, evenly: the board is complete on the last answer and
+ * then the flow moves on. The bottom full-width slot used to carry a persona
+ * title; it is a content tile like any other now.
  */
 const FILL_ORDER: Record<number, readonly MediaSlot[]> = {
   2: ['wide1', 'tallLeft'],

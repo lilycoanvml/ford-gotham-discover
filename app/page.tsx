@@ -289,9 +289,7 @@ function ChatScreen({ onComplete, onBack, board, setBoard }: {
 
   // The orb takes the next palette colour per question (terra → sage → steel),
   // matching the order of the Fathom / Your / Future chips on the landing screen.
-  // The name prompt shares Q1's colour, and there are only three palettes — so
-  // the two practical questions at the end hold on steel rather than cycling
-  // back to terra, which would read as the conversation starting over.
+  // The name prompt shares Q1's colour, so each of the three questions gets one.
   const orbColor = Math.min(2, Math.max(0, progressCount - 1));
   const orbMode: OrbMode =
       isBusy      ? 'thinking'

@@ -140,7 +140,7 @@ export function stopSpeech() {
 
 // ─── clip cache ──────────────────────────────────────────────────────────────
 /*
- * The questions never change, so their audio is fetched during the
+ * The three questions never change, so their audio is fetched during the
  * previous turn and played from memory — the expensive part of a turn stops
  * being on the critical path.
  */
@@ -215,7 +215,7 @@ export async function playClip(clip: Clip, token: number): Promise<void> {
 
 /*
  * Speak one fixed line, preferring the cache. Used for the opening line and the
- * fixed questions — the parts of the script whose wording is guaranteed.
+ * three questions — the parts of the script whose wording is guaranteed.
  * Resolves when the audio has finished playing.
  */
 export async function speakCached(text: string, token: number): Promise<void> {
